@@ -18,3 +18,5 @@ All notable changes to this project are documented here. The format follows
   them and report whether one is set, never return them.
 - `global.json` accepts any .NET 10 SDK (10.0.100 and later), so the SDKs shipped by Linux distributions (10.0.1xx)
   build it; CI uses the newest .NET 10 SDK, and Dependabot no longer raises the minimum. Package versions stay locked.
+- The plugin family is now called **Shoal**: this plugin shows as "Shoal AI". Settings, data and the plugin id are
+  unchanged.
