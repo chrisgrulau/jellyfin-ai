@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <!-- xunit v3 test projects are executables -->
+    <OutputType>Exe</OutputType>
+    <RootNamespace>Jellyfin.Plugin.Ai.Tests</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- xunit v3 runs on Microsoft.Testing.Platform (selected in global.json); no VSTest adapter needed -->
+    <PackageReference Include="xunit.v3" Version="4.0.1" />
+    <!-- The settings types derive from Jellyfin's; tests load Jellyfin.Model for real (the plugin excludes it at runtime) -->
+    <PackageReference Include="Jellyfin.Model" Version="12.1.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../../src/Jellyfin.Plugin.Ai/Jellyfin.Plugin.Ai.csproj" />
+  </ItemGroup>
+
+</Project>

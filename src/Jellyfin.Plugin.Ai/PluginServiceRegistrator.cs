@@ -1,0 +1,23 @@
+using System.IO;
+using Jellyfin.Plugin.Ai.Keys;
+using MediaBrowser.Common.Configuration;
+using MediaBrowser.Controller;
+using MediaBrowser.Controller.Plugins;
+using Microsoft.Extensions.DependencyInjection;
+
+namespace Jellyfin.Plugin.Ai;
+
+/// <summary>
+/// Registers the plugin's services with Jellyfin's dependency injection container.
+/// </summary>
+public class PluginServiceRegistrator : IPluginServiceRegistrator
+{
+    /// <inheritdoc />
+    public void RegisterServices(IServiceCollection serviceCollection, IServerApplicationHost applicationHost)
+    {
+        // API keys live in their own owner-only file in the plugin's data folder, never in the plugin configuration
+        // (which the settings page reads back)
+        serviceCollection.AddSingleton(sp => new ApiKeyStore(
+            Path.Combine(sp.GetRequiredService<IApplicationPaths>().PluginsPath, typeof(AiPlugin).Assembly.GetName().Name!, "keys.json")));
+    }
+}
