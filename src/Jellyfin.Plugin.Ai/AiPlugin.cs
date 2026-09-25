@@ -28,7 +28,7 @@ public class AiPlugin : BasePlugin<PluginConfiguration>, IHasWebPages
     }
 
     /// <inheritdoc />
-    public override string Name => "AI";
+    public override string Name => "Shoal AI";
 
     /// <inheritdoc />
     public override Guid Id => Guid.Parse("5f260705-cb7c-4fee-8324-b40202261739");
