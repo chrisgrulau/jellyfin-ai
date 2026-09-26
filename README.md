@@ -13,16 +13,17 @@ A [Jellyfin](https://jellyfin.org) plugin that gives the other plugins in the fa
 optional, budget-controlled access to AI models, for decisions they can't make on their own: which of two close
 candidate titles a release is, or whether a subtitle really matches the dialogue.
 
-> **Status:** early development. The settings page (providers, keys, spending limits) and Claude calls, kept within
-> the spending limits, are in place; the entry point the other plugins use is next.
+> **Status:** alpha. Claude calls within the spending limits, a prepaid-credit countdown and the entry point the other
+> plugins use are in place. OpenAI, Google and OpenAI-compatible providers can be set up but aren't used yet.
 
 ## How it fits together
 
 - **Optional everywhere.** Ingest and Subtitles work fully without this plugin. When it is installed, and you allow
   them to, they ask it for a tiebreak; otherwise they leave hard cases for your review, as before.
-- **Providers.** Anthropic (Claude) by default, using the current Sonnet model, updated automatically. OpenAI, Google
-  (Gemini) and any OpenAI-compatible service (a local server such as Ollama, or OpenRouter …) can be used instead or as
-  well. Naming a model pins it: it may cost more than the automatic choice, and the provider may retire it.
+- **Providers.** Anthropic (Claude), using Claude Opus 5.5 unless you name another model (USD 4 / 20 per million input
+  / output tokens; a tie-break costs a fraction of a cent, a transcript comparison a few cents). OpenAI, Google (Gemini)
+  and OpenAI-compatible services (a local server such as Ollama, or OpenRouter …) are planned: they can be set up but
+  aren't used yet. Naming a model pins it: it may cost more, and the provider may retire it.
 - **Spending limits** in your own currency: an overall monthly limit for all paid providers (5 a month by default; 0
   means no paid use; "no limit" is an explicit choice with a warning), plus, if you like, a limit per provider as an
   amount or a share of the overall limit. Providers' charges (usually US dollars) are converted with the European
@@ -30,9 +31,15 @@ candidate titles a release is, or whether a subtitle really matches the dialogue
 
 ## Privacy
 
-Nothing is sent anywhere until you allow a plugin to use AI, and then only to the providers you enable. Requests carry
-titles, years, release names and short text excerpts, never file paths, user names, or anything from home video and
-photo libraries. See [SECURITY.md](SECURITY.md) and [docs/DESIGN.md](docs/DESIGN.md).
+Nothing is sent anywhere until you allow a plugin to use AI, and then only to the providers you enable. Never file
+paths, user names, or anything from home video and photo libraries. What each plugin sends:
+
+| From | When | What |
+|---|---|---|
+| Ingest | A close match | The file name; candidate titles, years and kinds |
+| Ingest | An episode named by title, or with no usable name | Also the season's episode titles, years and short synopses; for no usable name, up to 4,000 characters of transcribed dialogue |
+| Subtitles | The wording differs from what is said, or an audit | The subtitle language, a few minutes of heard phrases and the subtitle lines around them |
+ See [SECURITY.md](SECURITY.md) and [docs/DESIGN.md](docs/DESIGN.md).
 
 ## Settings
 

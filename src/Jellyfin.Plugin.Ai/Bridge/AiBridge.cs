@@ -1,9 +1,14 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Linq;
+using System.Net.Http;
+using System.Text;
+using System.Text.Encodings.Web;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Threading;
+using System.Text.Unicode;
 using System.Threading.Tasks;
 using Jellyfin.Plugin.Ai.Configuration;
 using Jellyfin.Plugin.Ai.Keys;
@@ -45,9 +50,15 @@ public static class AiBridge
     /// <summary>The largest output allowance accepted.</summary>
     public const int MaxOutputTokens = 16000;
 
-    private static readonly JsonSerializerOptions Options = new() { PropertyNamingPolicy = JsonNamingPolicy.CamelCase };
+    // Replies: letters in every script as themselves (FAM-02); < > & stay escaped
+    private static readonly JsonSerializerOptions Options = new() { PropertyNamingPolicy = JsonNamingPolicy.CamelCase, Encoder = JavaScriptEncoder.Create(UnicodeRanges.All) };
+
+    // Data passed on to the model: the same encoder as the callers' requests, so </data> can't appear inside it
+    private static readonly JsonSerializerOptions Json = new() { Encoder = JavaScriptEncoder.Create(UnicodeRanges.All) };
+
     private static ApiKeyStore? _keys;
     private static AiSpending? _spending;
+    private static IHttpClientFactory? _http;
 
     /// <summary>
     /// Answers a request from another plugin.
@@ -64,13 +75,27 @@ public static class AiBridge
 
         if (Parse(requestJson, config, out var request, out var provider) is { } problem)
         {
-            return Reply(false, problem, "not-allowed");
+            return Reply(false, problem.Message, problem.Failure);
+        }
+
+        // Exchange rates are needed to price the call in the user's currency; refreshed at most once a day (AI-02)
+        if (_http is not null)
+        {
+            try
+            {
+                using var http = _http.CreateClient();
+                await _spending.Rates.RefreshAsync(http, cancellationToken).ConfigureAwait(false);
+            }
+            catch (HttpRequestException)
+            {
+                // The last good rates are kept; too old ones make the ledger refuse, with its own reason
+            }
         }
 
         var (model, why) = AiModels.Create(config, provider!, null, _keys, _spending);
         if (model is null)
         {
-            return Reply(false, why ?? "No AI provider can be used.", "not-allowed");
+            return Reply(false, why ?? "No AI provider can be used.", "not-configured");
         }
 
         try
@@ -81,6 +106,12 @@ public static class AiBridge
         catch (AiException ex)
         {
             return Reply(false, ex.Message, Name(ex.Failure));
+        }
+#pragma warning disable CA1031 // The entry point is documented never to throw: anything unexpected is a transient failure
+        catch (Exception ex) when (ex is not OperationCanceledException)
+#pragma warning restore CA1031
+        {
+            return Reply(false, "The AI plugin failed (" + ex.GetType().Name + ").", "transient");
         }
         finally
         {
@@ -93,10 +124,12 @@ public static class AiBridge
     /// </summary>
     /// <param name="keys">The key store.</param>
     /// <param name="spending">Prices, ledger and rates.</param>
-    internal static void Attach(ApiKeyStore keys, AiSpending spending)
+    /// <param name="http">HTTP clients (for exchange rates), if available.</param>
+    internal static void Attach(ApiKeyStore keys, AiSpending spending, IHttpClientFactory? http = null)
     {
         _keys = keys;
         _spending = spending;
+        _http = http;
     }
 
     /// <summary>
@@ -107,14 +140,14 @@ public static class AiBridge
     /// <param name="request">The request, when valid.</param>
     /// <param name="provider">The provider to use.</param>
     /// <returns>Why it can't be answered, or <c>null</c> when it can.</returns>
-    internal static string? Parse(string? json, PluginConfiguration config, out AiRequest? request, out string? provider)
+    internal static Problem? Parse(string? json, PluginConfiguration config, out AiRequest? request, out string? provider)
     {
         ArgumentNullException.ThrowIfNull(config);
         request = null;
         provider = null;
-        if (string.IsNullOrEmpty(json) || json.Length > MaxInstructions + MaxData + MaxSchema + 4096)
+        if (string.IsNullOrEmpty(json) || Encoding.UTF8.GetByteCount(json) > MaxInstructions + MaxData + MaxSchema + 4096)
         {
-            return "The request is empty or too large.";
+            return new("The request is empty or too large.", "bad-request");
         }
 
         JsonObject? root;
@@ -124,49 +157,65 @@ public static class AiBridge
         }
         catch (JsonException)
         {
-            return "The request isn't valid JSON.";
+            return new("The request isn't valid JSON.", "bad-request");
         }
 
-        if (root is null || (int?)root["version"] != Version)
+        if (root is null)
         {
-            return "Unsupported request version (this plugin speaks version " + Version + ").";
+            return new("The request isn't a JSON object.", "bad-request");
         }
 
-        var caller = (string?)root["caller"];
-        var purpose = (string?)root["purpose"];
-        var instructions = (string?)root["instructions"];
-        var data = root["data"] is JsonValue v && v.TryGetValue<string>(out var text) ? text : root["data"]?.ToJsonString();
+        // Every field is read by type: a wrong type is a bad request, never an exception
+        if (!TryInt(root["version"], out var version) || version != Version)
+        {
+            return new("Unsupported request version (this plugin speaks version " + Version + "); update the Shoal plugins so they match.", "unsupported-version");
+        }
+
+        if (!TryString(root["caller"], out var caller) || !TryString(root["purpose"], out var purpose) || !TryString(root["instructions"], out var instructions)
+            || !TryString(root["effort"], out var effort) || !TryInt(root["maxOutputTokens"], out var maxOutputTokens))
+        {
+            return new("A field has the wrong type.", "bad-request");
+        }
+
         if (root["schema"] is not JsonObject schema)
         {
-            return "The request has no answer schema.";
+            return new("The request has no answer schema.", "bad-request");
         }
 
+        // Data is always sent as JSON (a string arrives as a JSON string), escaped the same way whatever its type
+        if (root["data"] is not { } dataNode)
+        {
+            return new("The request has no data.", "bad-request");
+        }
+
+        var data = dataNode.ToJsonString(Json);
         if (!config.Enabled)
         {
-            return "The AI plugin is switched off.";
+            return new("The AI plugin is switched off.", "off");
         }
 
         var allowed = caller switch { "ingest" => config.AllowIngest, "subtitles" => config.AllowSubtitles, _ => false };
         if (!allowed)
         {
-            return "The AI plugin isn't allowed to help " + caller + " (see its settings page).";
+            return new("The AI plugin isn't allowed to help " + caller + " (see its settings page).", "off");
         }
 
         if (purpose is null || !purpose.StartsWith(caller + ".", StringComparison.Ordinal) || purpose.Length > 64)
         {
-            return "The request's purpose must start with \"" + caller + ".\".";
+            return new("The request's purpose must start with \"" + caller + ".\".", "bad-request");
         }
 
-        var schemaText = schema.ToJsonString();
-        if (string.IsNullOrWhiteSpace(instructions) || instructions.Length > MaxInstructions || data is null || data.Length > MaxData || schemaText.Length > MaxSchema)
+        var schemaText = schema.ToJsonString(Json);
+        var dataBytes = Encoding.UTF8.GetByteCount(data);
+        if (string.IsNullOrWhiteSpace(instructions) || instructions.Length > MaxInstructions || dataBytes > MaxData || schemaText.Length > MaxSchema)
         {
-            return "The request's instructions, data or schema are missing or too large.";
+            return new(string.Create(CultureInfo.InvariantCulture, $"The request's instructions, data or schema are missing or too large (data {dataBytes:N0} of {MaxData:N0} bytes)."), "bad-request");
         }
 
         provider = config.Providers.FirstOrDefault(p => p is { Enabled: true } && p.Id == KnownProviders.Anthropic)?.Id;
         if (provider is null)
         {
-            return "No AI provider is switched on.";
+            return new("No usable AI provider is switched on (only Anthropic Claude is supported so far).", "not-configured");
         }
 
         using var schemaDoc = JsonDocument.Parse(schemaText);
@@ -176,11 +225,53 @@ public static class AiBridge
             Instructions = instructions,
             Data = data,
             Schema = schemaDoc.RootElement.EnumerateObject().ToDictionary(p => p.Name, p => p.Value.Clone(), StringComparer.Ordinal),
-            MaxOutputTokens = Math.Clamp((int?)root["maxOutputTokens"] ?? 2048, 256, MaxOutputTokens),
-            Effort = ((string?)root["effort"]) switch { "medium" => AiEffort.Medium, "high" => AiEffort.High, _ => AiEffort.Low },
+            MaxOutputTokens = Math.Clamp(maxOutputTokens ?? 2048, 256, MaxOutputTokens),
+            Effort = effort switch { "medium" => AiEffort.Medium, "high" => AiEffort.High, _ => AiEffort.Low },
         };
         return null;
     }
+
+    private static bool TryInt(JsonNode? node, out int? value)
+    {
+        value = null;
+        if (node is null)
+        {
+            return true;
+        }
+
+        if (node is JsonValue v && v.GetValueKind() == JsonValueKind.Number && v.TryGetValue<int>(out var i))
+        {
+            value = i;
+            return true;
+        }
+
+        return false;
+    }
+
+    private static bool TryString(JsonNode? node, out string? value)
+    {
+        value = null;
+        if (node is null)
+        {
+            return true;
+        }
+
+        if (node is JsonValue v && v.GetValueKind() == JsonValueKind.String)
+        {
+            value = v.GetValue<string>();
+            return true;
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    /// Why a request can't be answered.
+    /// </summary>
+    /// <param name="Message">In words safe to show.</param>
+    /// <param name="Failure">The failure name: <c>off</c> (switched off or not allowed on the settings page),
+    /// <c>not-configured</c> (no usable provider or key), <c>unsupported-version</c> or <c>bad-request</c>.</param>
+    internal sealed record Problem(string Message, string Failure);
 
     private static string Name(FailureClass failure) => failure switch
     {
@@ -205,7 +296,8 @@ internal sealed class AiBridgeHost : Microsoft.Extensions.Hosting.IHostedService
     /// </summary>
     /// <param name="keys">The key store.</param>
     /// <param name="spending">Prices, ledger and rates.</param>
-    public AiBridgeHost(ApiKeyStore keys, AiSpending spending) => AiBridge.Attach(keys, spending);
+    /// <param name="http">HTTP clients.</param>
+    public AiBridgeHost(ApiKeyStore keys, AiSpending spending, IHttpClientFactory http) => AiBridge.Attach(keys, spending, http);
 
     /// <inheritdoc />
     public Task StartAsync(CancellationToken cancellationToken) => Task.CompletedTask;
