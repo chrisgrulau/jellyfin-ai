@@ -24,6 +24,10 @@ All notable changes to this project are documented here. The format follows
   the output limit, invalid JSON), is recorded in the spending ledger at the tokens it actually used. Before, its
   reservation was released, so the ledger under-counted. "Cut off" is recognised by the reply's stop reason, not by
   the wording of the message.
+- **FAM-04:** the entry point's version and data limit now come from common's `AiBridgeClient` (the shared code is
+  updated to its current version), so the two sides can't drift. A contract test runs the real client against this
+  plugin: its finder locates the entry point, the entry point accepts the client's own request, and the client reads
+  the entry point's replies. DESIGN now says callers find the plugin by assembly and type name, not by its id.
 - **AI-05, DOC-03:** the docs now match the default model (Claude Opus 5.5) and the entry point that exists. The
   README lists what each plugin sends.
 

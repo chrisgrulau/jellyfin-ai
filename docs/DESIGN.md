@@ -6,8 +6,9 @@ Working notes for the AI plugin. Descriptive of intent; updated as the implement
 
 The AI plugin owns **text models** for the plugin family; the Subtitles plugin owns speech-to-text. Ingest and
 Subtitles use this plugin only if it is installed and the administrator has allowed them to; without it they leave
-hard cases for review. Plugins never share C# types: callers find this plugin by its id and use a JSON-in/JSON-out
-entry point with BCL types only. Each request carries a purpose tag (`ingest.match`, `subtitles.match` …).
+hard cases for review. Plugins never share C# types: callers find this plugin's entry point by assembly and type name
+(`Jellyfin.Plugin.Ai`, `Jellyfin.Plugin.Ai.Bridge.AiBridge`, declared once in common's `AiBridgeClient` and checked by
+a contract test) and use a JSON-in/JSON-out entry point with BCL types only. Each request carries a purpose tag (`ingest.match`, `subtitles.match` …).
 
 ## Providers and models
 
