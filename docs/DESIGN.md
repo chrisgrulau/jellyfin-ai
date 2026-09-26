@@ -40,7 +40,11 @@ retired by the provider.
   and checks (see jellyfin-plugin-common's *Currencies* notes). Unknown or stale rates mean an unknown cost: paid calls
   in other currencies stop rather than count as free. An optional percentage covers taxes or card fees.
 - **Reserve, then settle.** The estimated cost of each call is reserved before it is made, atomically across concurrent
-  requests, and the actual cost settled afterwards. The ledger is persisted atomically.
+  requests, and the actual cost settled afterwards (common's `MeteredCall`). A reply that was billed but can't be used
+  (a refusal, cut off, invalid JSON) is settled at the tokens it used; a provider error or cancellation releases the
+  reservation; any other failure is settled at the estimate, since it may have been billed. The ledger, rates and
+  prices live in common's `SpendingStore`, which also refreshes the rates when due and gives the settings page its
+  currency list (in the `Ai/Spending` reply). The ledger is persisted atomically.
 - **Prices** come from the response where the provider gives them, else the provider's usage API, else a price table
   shipped in the plugin (validated; pinned by version). If prices can't be loaded, they are unknown and paid calls stop;
   never assume zero.

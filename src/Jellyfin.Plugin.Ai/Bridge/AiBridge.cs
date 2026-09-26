@@ -82,18 +82,13 @@ public static class AiBridge
             return Failed(problem.Message, problem.Failure);
         }
 
-        // Exchange rates are needed to price the call in the user's currency; refreshed at most once a day (AI-02)
+        // Exchange rates are needed to price the call in the user's currency: the shared store refreshes them about once
+        // a day, and at most every 30 minutes while they are missing or stale (AI-02, FAM-06). It never throws for network
+        // problems: the last good rates are kept, and too old ones make the ledger refuse, with its own reason
         if (_http is not null)
         {
-            try
-            {
-                using var http = _http.CreateClient();
-                await _spending.Rates.RefreshAsync(http, cancellationToken).ConfigureAwait(false);
-            }
-            catch (HttpRequestException)
-            {
-                // The last good rates are kept; too old ones make the ledger refuse, with its own reason
-            }
+            using var http = _http.CreateClient();
+            await _spending.Store.CurrentRatesAsync(http, cancellationToken).ConfigureAwait(false);
         }
 
         var (model, why) = AiModels.Create(config, provider!, null, _keys, _spending);

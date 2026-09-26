@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.IO;
 using System.Linq;
 using Jellyfin.Plugin.Ai.Budgets;
 using Jellyfin.Plugin.Ai.Configuration;
@@ -10,8 +9,8 @@ namespace Jellyfin.Plugin.Ai.Pricing;
 
 /// <summary>
 /// What AI calls cost and how much has been spent this month: the published prices shipped with the plugin, the spend
-/// ledger and the latest exchange rates, kept in the plugin's data folder. This plugin owns the ledger for AI providers
-/// shared by the plugin family.
+/// ledger and the latest exchange rates, kept in the plugin's data folder by common's shared <c>SpendingStore</c>. This
+/// plugin adds its own limits and token pricing, and owns the ledger for AI providers shared by the plugin family.
 /// </summary>
 public sealed class AiSpending : IDisposable
 {
@@ -33,19 +32,23 @@ public sealed class AiSpending : IDisposable
     internal AiSpending(string dataFolder, PriceTable? prices, TimeProvider? clock)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(dataFolder);
-        Ledger = new SpendLedger(Path.Combine(dataFolder, "spend.json"), clock);
-        Rates = new ExchangeRateStore(Path.Combine(dataFolder, "rates.json"), clock);
-        Prices = prices ?? Shipped();
+        Store = new SpendingStore(dataFolder, prices ?? SpendingStore.ShippedPrices(typeof(AiSpending).Assembly, typeof(AiSpending).Namespace + ".prices.json"), clock);
     }
 
+    /// <summary>Gets the currencies the settings page offers.</summary>
+    internal static IReadOnlyList<string> Currencies => SpendingStore.Currencies;
+
+    /// <summary>Gets the shared spending store: ledger, rates and prices (FAM-06).</summary>
+    internal SpendingStore Store { get; }
+
     /// <summary>Gets the spend ledger.</summary>
-    internal SpendLedger Ledger { get; }
+    internal SpendLedger Ledger => Store.Ledger;
 
     /// <summary>Gets the exchange rates.</summary>
-    internal ExchangeRateStore Rates { get; }
+    internal ExchangeRateStore Rates => Store.Rates;
 
     /// <summary>Gets the prices, or <c>null</c> if the shipped table couldn't be read (paid calls then wait).</summary>
-    internal PriceTable? Prices { get; }
+    internal PriceTable? Prices => Store.Prices;
 
     /// <summary>
     /// The spending limits from the settings: the overall monthly limit and each provider's own.
@@ -65,7 +68,7 @@ public sealed class AiSpending : IDisposable
             }
         }
 
-        return new SpendLimits(CurrencyCode.Normalise(config.Currency) ?? "USD", overall, per, Math.Clamp(config.ExtraChargesPercent, 0m, CostConverter.MaxExtraPercent));
+        return new SpendLimits(CurrencyCode.NormaliseOr(config.Currency, "USD"), overall, per, Math.Clamp(config.ExtraChargesPercent, 0m, CostConverter.MaxExtraPercent));
     }
 
     /// <summary>
@@ -100,17 +103,5 @@ public sealed class AiSpending : IDisposable
     }
 
     /// <inheritdoc />
-    public void Dispose() => Rates.Dispose();
-
-    private static PriceTable? Shipped()
-    {
-        using var stream = typeof(AiSpending).Assembly.GetManifestResourceStream(typeof(AiSpending).Namespace + ".prices.json");
-        if (stream is null)
-        {
-            return null;
-        }
-
-        using var reader = new StreamReader(stream);
-        return PriceTable.Parse(reader.ReadToEnd());
-    }
+    public void Dispose() => Store.Dispose();
 }

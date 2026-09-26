@@ -112,7 +112,8 @@
           ['google', 'Google (Gemini)', 'Current recommended (automatic)', false],
           ['openai-compatible', 'OpenAI-compatible service', 'Model name', false]
         ];
-        // The euro plus every currency in the European Central Bank's daily rates (as CurrencyCode.Supported)
+        // The currencies that can be chosen: replaced by the server's list (Ai/Spending) when it's available; this copy is
+        // only a fallback (the euro plus every currency in the European Central Bank's daily rates)
         var currencies = ['AUD', 'BGN', 'BRL', 'CAD', 'CHF', 'CNY', 'CZK', 'DKK', 'EUR', 'GBP', 'HKD', 'HUF', 'IDR', 'ILS', 'INR', 'ISK',
           'JPY', 'KRW', 'MXN', 'MYR', 'NOK', 'NZD', 'PHP', 'PLN', 'RON', 'SEK', 'SGD', 'THB', 'TRY', 'USD', 'ZAR'];
         var config = null;
@@ -232,6 +233,8 @@
         function loadSpending() {
           var box = page.querySelector('#SpendingNow');
           return ApiClient.getJSON(ApiClient.getUrl('Ai/Spending')).then(function (s) {
+            var listed = Array.isArray(s.Currencies) ? s.Currencies.filter(function (x) { return /^[A-Z]{3}$/.test(x); }) : [];
+            if (listed.length) { currencies = listed; }
             var fmt = function (n) { return s.Currency + ' ' + Number(n).toFixed(n > 0 && n < 0.01 ? 4 : 2); };
             var parts = ['This month: ' + (s.Spent == null ? 'unknown (no current exchange rates)' : fmt(s.Spent)) + (s.Limit == null ? ' (no limit)' : ' of ' + fmt(s.Limit))];
             var per = Object.keys(s.PerProvider || {});
@@ -297,12 +300,15 @@
             page.querySelector('#Enabled').checked = c.Enabled;
             page.querySelector('#AllowIngest').checked = c.AllowIngest;
             page.querySelector('#AllowSubtitles').checked = c.AllowSubtitles;
-            page.querySelector('#Currency').innerHTML = currencies.map(function (x) { return '<option value="' + x + '">' + x + '</option>'; }).join('');
-            page.querySelector('#Currency').value = currencies.indexOf(c.Currency) >= 0 ? c.Currency : 'USD';
             page.querySelector('#OverallMonthlyBudget').value = c.OverallMonthlyBudget;
             page.querySelector('#NoOverallLimit').checked = !!c.NoOverallLimit;
             page.querySelector('#ExtraChargesPercent').value = c.ExtraChargesPercent || 0;
-            loadSpending();
+            // The spending reply carries the currency list, so it's read before the lists are filled
+            return loadSpending();
+          }).then(function () {
+            var c = config;
+            page.querySelector('#Currency').innerHTML = currencies.map(function (x) { return '<option value="' + x + '">' + x + '</option>'; }).join('');
+            page.querySelector('#Currency').value = currencies.indexOf(c.Currency) >= 0 ? c.Currency : 'USD';
             return loadKeys();
           }).then(function () { refresh(); Dashboard.hideLoadingMsg(); });
         });

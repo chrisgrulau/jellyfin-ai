@@ -11,6 +11,13 @@ All notable changes to this project are documented here. The format follows
   the same way. A call that fails unexpectedly (not a provider error, not a cancellation) is now recorded at its
   estimate, since it may have been billed; before, its reservation was left open and counted at the estimate anyway,
   until the month ended.
+- **FAM-06:** spending (the ledger, exchange rates and prices) is kept by common's shared spending store. Exchange
+  rates for another plugin's request are refreshed about once a day as before, but while they are missing or stale a
+  failed refresh is retried at most every 30 minutes rather than on every request. The Test button still refreshes
+  them directly.
+- **FAM-06:** a currency setting that isn't supported is read as USD everywhere; before, the spending limits accepted
+  any three letters. The settings page takes its currency list from the server (`Ai/Spending` now returns it), keeping
+  its own copy only as a fallback.
 
 ## [0.2.0-alpha] - 2026-09-26
 

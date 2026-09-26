@@ -104,6 +104,25 @@ public sealed class MeteringTests : IDisposable
         Assert.Equal(5m, limits.PerProvider["anthropic"]);
     }
 
+    [Theory]
+    [InlineData("xyz")]
+    [InlineData("")]
+    [InlineData(null)]
+    public void An_unsupported_currency_setting_is_read_as_usd(string? currency)
+    {
+        // FAM-06: "the setting, or USD" only lets a supported code through (before, any three letters passed)
+        var limits = AiSpending.LimitsOf(new PluginConfiguration { Currency = currency! });
+
+        Assert.Equal("USD", limits.Currency);
+    }
+
+    [Fact]
+    public void The_settings_page_is_offered_the_shared_currency_list()
+    {
+        Assert.Equal(CurrencyCode.Supported, AiSpending.Currencies);
+        Assert.Contains("AUD", AiSpending.Currencies);
+    }
+
     [Fact]
     public async Task A_prepaid_credit_counts_down_from_its_date()
     {

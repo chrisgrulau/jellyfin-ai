@@ -42,7 +42,7 @@ public static class BudgetRules
     {
         ArgumentNullException.ThrowIfNull(config);
 
-        config.Currency = Common.Costs.CurrencyCode.IsSupported(config.Currency) ? Common.Costs.CurrencyCode.Normalise(config.Currency)! : "USD";
+        config.Currency = Common.Costs.CurrencyCode.NormaliseOr(config.Currency, "USD");
         config.OverallMonthlyBudget = Math.Max(0, config.OverallMonthlyBudget);
         config.ExtraChargesPercent = Math.Clamp(config.ExtraChargesPercent, 0m, Common.Costs.CostConverter.MaxExtraPercent);
 
@@ -59,7 +59,7 @@ public static class BudgetRules
             p.Model = (p.Model ?? string.Empty).Trim();
             p.BaseUrl = (p.BaseUrl ?? string.Empty).Trim();
             p.PrepaidCredit = Math.Max(0, p.PrepaidCredit);
-            p.PrepaidCreditCurrency = Common.Costs.CurrencyCode.Normalise(p.PrepaidCreditCurrency) is { } cc && Common.Costs.CurrencyCode.IsSupported(cc) ? cc : "USD";
+            p.PrepaidCreditCurrency = Common.Costs.CurrencyCode.NormaliseOr(p.PrepaidCreditCurrency, "USD");
             p.PrepaidCreditDate = DateOnly.TryParseExact((p.PrepaidCreditDate ?? string.Empty).Trim(), "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out var d)
                 ? d.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)
                 : string.Empty;
