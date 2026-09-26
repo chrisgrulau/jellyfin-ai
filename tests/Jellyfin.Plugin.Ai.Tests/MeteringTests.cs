@@ -104,6 +104,38 @@ public sealed class MeteringTests : IDisposable
         Assert.Equal(5m, limits.PerProvider["anthropic"]);
     }
 
+    [Fact]
+    public async Task A_prepaid_credit_counts_down_from_its_date()
+    {
+        using var spending = new AiSpending(_dir);
+        await new MeteredModel(new Fake { Output = 500 }, spending, Aud(5m)).AskAsync(Request(), TestContext.Current.CancellationToken);
+        var today = DateTime.Now.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture);
+        var provider = new ProviderSettings { Id = "anthropic", Enabled = true, PrepaidCredit = 10m, PrepaidCreditDate = today };
+
+        var left = PrepaidCredit.Of(provider, spending.Ledger, null)!;
+
+        Assert.Equal("USD", left.Currency);
+        Assert.Equal(0.0104m, left.Spent);
+        Assert.Equal(9.9896m, left.Remaining);
+        Assert.Null(PrepaidCredit.Of(new ProviderSettings { Id = "anthropic" }, spending.Ledger, null));
+        var later = PrepaidCredit.Of(new ProviderSettings { Id = "anthropic", PrepaidCredit = 5m, PrepaidCreditDate = DateTime.Now.AddDays(1).ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture) }, spending.Ledger, null)!;
+        Assert.Equal(5m, later.Remaining);
+    }
+
+    [Fact]
+    public void Credit_settings_are_tidied()
+    {
+        var config = new PluginConfiguration();
+        config.Providers.Add(new ProviderSettings { Id = "anthropic", PrepaidCredit = -3m, PrepaidCreditCurrency = "xyz", PrepaidCreditDate = "yesterday" });
+
+        Jellyfin.Plugin.Ai.Budgets.BudgetRules.Normalise(config);
+
+        var p = config.Providers[0];
+        Assert.Equal(0m, p.PrepaidCredit);
+        Assert.Equal("USD", p.PrepaidCreditCurrency);
+        Assert.Equal(string.Empty, p.PrepaidCreditDate);
+    }
+
     private sealed class Fake : IAiModel
     {
         public string Provider => KnownProviders.Anthropic;

@@ -164,6 +164,21 @@ public class AiController : ControllerBase
             _spending.Prices?.Version);
     }
 
+    /// <summary>
+    /// What's left of each prepaid credit being tracked.
+    /// </summary>
+    /// <returns>The credits.</returns>
+    [HttpGet("Credit")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    public ActionResult<IReadOnlyList<Pricing.CreditLeft>> Credit()
+    {
+        var config = AiPlugin.Instance?.Configuration ?? new PluginConfiguration();
+        return config.Providers
+            .Select(p => Pricing.PrepaidCredit.Of(p, _spending.Ledger, _spending.Rates.Current))
+            .OfType<Pricing.CreditLeft>()
+            .ToList();
+    }
+
     private static readonly IReadOnlyDictionary<string, JsonElement> TestSchema = new Dictionary<string, JsonElement>
     {
         ["type"] = JsonSerializer.SerializeToElement("object"),

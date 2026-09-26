@@ -42,4 +42,16 @@ public class ProviderSettings
 
     /// <summary>Gets or sets the limit: an amount per month, or a percentage of the overall limit.</summary>
     public decimal BudgetValue { get; set; }
+
+    /// <summary>
+    /// Gets or sets a prepaid credit to count down (Anthropic has no balance API): the amount bought, or 0 to not track
+    /// one. What this plugin spends with the provider since <see cref="PrepaidCreditDate"/> is taken off it.
+    /// </summary>
+    public decimal PrepaidCredit { get; set; }
+
+    /// <summary>Gets or sets the currency the credit was bought in (US dollars for Anthropic).</summary>
+    public string PrepaidCreditCurrency { get; set; } = "USD";
+
+    /// <summary>Gets or sets the date the credit was bought or last topped up (<c>yyyy-MM-dd</c>).</summary>
+    public string PrepaidCreditDate { get; set; } = string.Empty;
 }

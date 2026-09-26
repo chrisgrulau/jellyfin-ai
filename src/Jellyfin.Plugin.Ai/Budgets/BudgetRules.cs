@@ -58,6 +58,11 @@ public static class BudgetRules
             var p = byId.TryGetValue(id, out var existing) ? existing : KnownProviders.Default(id);
             p.Model = (p.Model ?? string.Empty).Trim();
             p.BaseUrl = (p.BaseUrl ?? string.Empty).Trim();
+            p.PrepaidCredit = Math.Max(0, p.PrepaidCredit);
+            p.PrepaidCreditCurrency = Common.Costs.CurrencyCode.Normalise(p.PrepaidCreditCurrency) is { } cc && Common.Costs.CurrencyCode.IsSupported(cc) ? cc : "USD";
+            p.PrepaidCreditDate = DateOnly.TryParseExact((p.PrepaidCreditDate ?? string.Empty).Trim(), "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out var d)
+                ? d.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)
+                : string.Empty;
             p.BudgetValue = p.BudgetMode == ProviderBudgetMode.PercentOfOverall ? Math.Clamp(p.BudgetValue, 0m, 100m) : Math.Max(0, p.BudgetValue);
             config.Providers.Add(p);
         }
