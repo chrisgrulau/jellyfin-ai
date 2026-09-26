@@ -5,6 +5,24 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- **FAM-02:** text in any script is passed to the model as it is, not as `\uXXXX` escapes. The data limit (64 KB) is
+  measured in UTF-8 bytes, and a request that's too large is refused as a bad request, with its size.
+- **AI-02:** exchange rates are refreshed (at most once a day) when another plugin asks. Before, only the Test button
+  refreshed them, so in any currency other than USD, AI help stopped about a week after the last Test.
+- **AI-03:** a request field of the wrong type is answered as a bad request instead of throwing. String data is always
+  JSON-encoded, so it can't close the model's data block. Anything unexpected is answered as transient, never thrown.
+- **FAM-03 (server side):** refusals say what the caller should do:
+  - `off`: switched off, or the plugin isn't allowed on the settings page;
+  - `not-configured`: no usable provider or key;
+  - `unsupported-version`;
+  - `bad-request`.
+
+  Before, all of these were `not-allowed`.
+- **AI-05, DOC-03:** the docs now match the default model (Claude Opus 5.5) and the entry point that exists. The
+  README lists what each plugin sends.
+
 ## [0.1.0-alpha] - 2026-09-26
 
 ### Added

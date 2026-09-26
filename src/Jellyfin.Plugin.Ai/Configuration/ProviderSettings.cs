@@ -29,7 +29,7 @@ public class ProviderSettings
 
     /// <summary>
     /// Gets or sets the model. Empty means the current recommended model, resolved automatically (for Anthropic, the
-    /// newest Sonnet); naming a model pins it, and a pinned model may cost more and can be retired by the provider.
+    /// Claude Opus 5.5 for Anthropic); naming a model pins it, and a pinned model may cost more and can be retired by the provider.
     /// </summary>
     public string Model { get; set; } = string.Empty;
 

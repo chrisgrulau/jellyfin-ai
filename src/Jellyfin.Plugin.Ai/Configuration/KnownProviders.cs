@@ -9,7 +9,7 @@ namespace Jellyfin.Plugin.Ai.Configuration;
 /// </summary>
 public static class KnownProviders
 {
-    /// <summary>Anthropic (Claude). The default: the current Sonnet model unless another is pinned.</summary>
+    /// <summary>Anthropic (Claude). The default: Claude Opus 5.5 unless another model is named.</summary>
     public const string Anthropic = "anthropic";
 
     /// <summary>OpenAI.</summary>
