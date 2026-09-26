@@ -24,6 +24,9 @@ All notable changes to this project are documented here. The format follows
   - Prices ship with the plugin, dated 2026-09-26, for Claude Opus 5.5, Opus 5, Sonnet 5 and Haiku 4.5.
   - Unknown prices or exchange rates mean no call.
   - The settings page shows this month's spending.
+- **Prepaid credit.** Anthropic has no balance API, so each paid provider can count down a prepaid credit instead. You
+  enter the amount and the date it was bought or topped up. The settings page shows about what's left: the credit less
+  what this plugin has spent with that provider since. Use of the same key elsewhere isn't seen.
 - **Test** on the settings page sends one tiny request (a fraction of a cent) and shows the model, the time taken, the
   tokens used and the cost.
 

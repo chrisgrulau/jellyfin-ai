@@ -11,6 +11,8 @@
       #AiConfigPage .ai-provider .inputContainer, #AiConfigPage .ai-provider .selectContainer, #AiConfigPage .ai-provider .checkboxContainer { margin: 0; }
       #AiConfigPage .ai-key { display: flex; gap: .5em; align-items: end; flex-wrap: wrap; }
       #AiConfigPage .ai-key .inputContainer { flex: 1 1 12em; }
+      #AiConfigPage .ai-credit { display: flex; gap: .5em 1em; align-items: end; flex-wrap: wrap; }
+      #AiConfigPage .ai-credit .inputContainer { flex: 1 1 12em; margin-bottom: 0; }
       #AiConfigPage .ai-muted { opacity: .7; font-size: .9em; }
       #AiConfigPage .ai-set { color: #4caf50; }
       #AiConfigPage details.ai-advanced { margin-top: 2em; border-top: 1px solid rgba(128,128,128,.25); padding-top: 1em; }
@@ -132,6 +134,9 @@
               '<button is="emby-button" type="button" class="raised p-test"><span>Test</span></button><div class="p-result ai-muted" style="flex-basis:100%"></div></div>' +
               '<div>' +
               '<div class="inputContainer"><label class="inputLabel inputLabelUnfocused">Model</label><input is="emby-input" type="text" class="p-model" value="' + esc(v.Model) + '" placeholder="' + esc(p[2]) + '" /></div>' +
+              (p[0] !== 'openai-compatible' ? '<div class="ai-credit"><div class="inputContainer"><label class="inputLabel inputLabelUnfocused">Prepaid credit (' + esc(v.PrepaidCreditCurrency || 'USD') + ')</label><input is="emby-input" type="number" min="0" step="0.01" class="p-credit" value="' + esc(v.PrepaidCredit || '') + '" placeholder="Not tracked" /></div>' +
+                '<div class="inputContainer"><label class="inputLabel inputLabelUnfocused">Bought or topped up on</label><input is="emby-input" type="date" class="p-credit-date" value="' + esc(v.PrepaidCreditDate || '') + '" /></div>' +
+                '<div class="p-credit-left ai-muted" style="flex-basis:100%"></div></div>' : '') +
               (p[0] === 'openai-compatible' ? '<div class="inputContainer"><label class="inputLabel inputLabelUnfocused">Address</label><input is="emby-input" type="url" class="p-url" value="' + esc(v.BaseUrl) + '" placeholder="http://localhost:11434/v1" /><div class="fieldDescription">An address on this server or your local network counts as free: it has no spending limit. If it relays to a paid service (for example LiteLLM or an OpenRouter proxy), set a limit in that service.</div></div>' : '') +
               '</div></div>';
           }).join('') + '<p class="ai-muted">Leave the model empty to use the recommended model (for Claude, Claude Opus 5.5), updated with plugin releases. Naming a model pins it: it may cost more than the recommended one, and the provider may retire it. <strong>Test</strong> sends one tiny request (a fraction of a cent, counted like any other).</p>';
@@ -171,7 +176,10 @@
               Model: row.querySelector('.p-model').value.trim(),
               BaseUrl: row.querySelector('.p-url') ? row.querySelector('.p-url').value.trim() : v.BaseUrl,
               BudgetMode: limit ? limit.querySelector('.l-mode').value : 'OverallOnly',
-              BudgetValue: limit ? Math.max(0, parseFloat(limit.querySelector('.l-value').value) || 0) : 0
+              BudgetValue: limit ? Math.max(0, parseFloat(limit.querySelector('.l-value').value) || 0) : 0,
+              PrepaidCredit: row.querySelector('.p-credit') ? Math.max(0, parseFloat(row.querySelector('.p-credit').value) || 0) : 0,
+              PrepaidCreditCurrency: v.PrepaidCreditCurrency || 'USD',
+              PrepaidCreditDate: row.querySelector('.p-credit-date') ? row.querySelector('.p-credit-date').value : ''
             };
           });
           return c;
@@ -208,8 +216,22 @@
           }, function () { box.textContent = ''; });
         }
 
+        // What's left of each prepaid credit (this plugin's spending since the date, taken off the credit)
+        function loadCredit() {
+          return ApiClient.getJSON(ApiClient.getUrl('Ai/Credit')).then(function (list) {
+            Array.prototype.forEach.call(page.querySelectorAll('.p-credit-left'), function (e) { e.textContent = ''; });
+            (list || []).forEach(function (c) {
+              var box = page.querySelector('[data-provider="' + c.Provider + '"] .p-credit-left');
+              if (!box) { return; }
+              box.textContent = c.Remaining == null
+                ? 'Credit left: unknown (spending in another currency needs current exchange rates).'
+                : 'Credit left: about ' + c.Currency + ' ' + Number(c.Remaining).toFixed(2) + ' (' + c.Currency + ' ' + Number(c.Credit).toFixed(2) + ' on ' + c.Since + ', less ' + c.Currency + ' ' + Number(c.Spent).toFixed(2) + ' spent by this plugin since). Use of the same key elsewhere isn\'t seen.';
+            });
+          }, function () {});
+        }
+
         function loadKeys() {
-          return ApiClient.getJSON(ApiClient.getUrl('Ai/Keys')).then(renderProviders);
+          return ApiClient.getJSON(ApiClient.getUrl('Ai/Keys')).then(renderProviders).then(loadCredit);
         }
 
         page.addEventListener('change', refresh);
@@ -228,7 +250,7 @@
             var result = row.querySelector('.p-result');
             result.textContent = 'Testing…';
             ApiClient.ajax({ type: 'POST', url: ApiClient.getUrl('Ai/Test'), data: JSON.stringify({ Provider: id, Model: row.querySelector('.p-model').value.trim() }), contentType: 'application/json', dataType: 'json' })
-              .then(function (r) { result.textContent = (r.Ok ? '✓ ' : '✗ ') + r.Message; loadSpending(); }, function () { result.textContent = '✗ The test couldn\'t be run.'; });
+              .then(function (r) { result.textContent = (r.Ok ? '✓ ' : '✗ ') + r.Message; loadSpending(); loadCredit(); }, function () { result.textContent = '✗ The test couldn\'t be run.'; });
           } else if (e.target.closest('.p-clearkey')) {
             config = fromPage();
             ApiClient.ajax({ type: 'DELETE', url: ApiClient.getUrl('Ai/Keys/' + id) }).then(loadKeys);
@@ -264,7 +286,7 @@
               Dashboard.alert('Not saved: ' + errors.map(function (m) { return m.Message; }).join(' '));
               return;
             }
-            ApiClient.updatePluginConfiguration(pluginId, c).then(function (r) { config = c; Dashboard.processPluginConfigurationUpdateResult(r); });
+            ApiClient.updatePluginConfiguration(pluginId, c).then(function (r) { config = c; Dashboard.processPluginConfigurationUpdateResult(r); loadCredit(); });
           });
           return false;
         });
