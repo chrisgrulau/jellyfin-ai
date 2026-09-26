@@ -90,13 +90,23 @@ public static class BudgetRules
     /// </summary>
     /// <param name="config">The settings.</param>
     /// <returns>The messages; empty when all is well.</returns>
-    public static IReadOnlyList<BudgetMessage> Check(PluginConfiguration config)
+    public static IReadOnlyList<BudgetMessage> Check(PluginConfiguration config) => Check(config, KnownProviders.IsAvailable);
+
+    /// <summary>
+    /// Checks the limits of the providers that can be used.
+    /// </summary>
+    /// <param name="config">The settings.</param>
+    /// <param name="available">Whether a provider can be used. The others make no calls, and the page can't change their
+    /// settings, so they're left out: a saved setting for one can't block saving (FAM-08).</param>
+    /// <returns>The messages; empty when all is well.</returns>
+    internal static IReadOnlyList<BudgetMessage> Check(PluginConfiguration config, Func<string, bool> available)
     {
         ArgumentNullException.ThrowIfNull(config);
+        ArgumentNullException.ThrowIfNull(available);
 
         var messages = new List<BudgetMessage>();
         decimal? overall = config.NoOverallLimit ? null : Math.Max(0, config.OverallMonthlyBudget);
-        var paid = config.Providers.Where(p => p is { Enabled: true } && !IsLocal(p)).ToList();
+        var paid = config.Providers.Where(p => p is { Enabled: true } && available(p.Id) && !IsLocal(p)).ToList();
         string Money(decimal amount) => config.Currency + " " + amount.ToString("0.00", CultureInfo.InvariantCulture);
 
         foreach (var p in paid.Where(p => p.BudgetMode == ProviderBudgetMode.PercentOfOverall && overall is null))

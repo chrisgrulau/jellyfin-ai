@@ -14,7 +14,8 @@ optional, budget-controlled access to AI models, for decisions they can't make o
 candidate titles a release is, or whether a subtitle really matches the dialogue.
 
 > **Status:** alpha. Claude calls within the spending limits, a prepaid-credit countdown and the entry point the other
-> plugins use are in place. OpenAI, Google and OpenAI-compatible providers can be set up but aren't used yet.
+> plugins use are in place. OpenAI, Google and OpenAI-compatible providers are coming later: the settings page lists
+> them, but they can't be set up or used yet.
 
 ## Installing
 
@@ -39,8 +40,8 @@ Uninstalling leaves the plugin's data folder (`keys.json`, `spend.json`, `rates.
   them to, they ask it for a tiebreak; otherwise they leave hard cases for your review, as before.
 - **Providers.** Anthropic (Claude), using Claude Opus 5.5 unless you name another model (USD 4 / 20 per million input
   / output tokens; a tie-break costs a fraction of a cent, a transcript comparison a few cents). OpenAI, Google (Gemini)
-  and OpenAI-compatible services (a local server such as Ollama, or OpenRouter …) are planned: they can be set up but
-  aren't used yet. Naming a model pins it: it may cost more, and the provider may retire it.
+  and OpenAI-compatible services (a local server such as Ollama, or OpenRouter …) are coming later: the settings page
+  shows them, but they can't be set up or used yet. Naming a model pins it: it may cost more, and the provider may retire it.
 - **Spending limits** in your own currency: an overall monthly limit for all paid providers (5 a month by default; 0
   means no paid use; "no limit" is an explicit choice with a warning), plus, if you like, a limit per provider as an
   amount or a share of the overall limit. Providers' charges (usually US dollars) are converted with the European
@@ -60,8 +61,10 @@ paths, user names, or anything from home video and photo libraries. What each pl
 
 ## Settings
 
-**Dashboard → Plugins → AI.** Basic settings: what may use AI, providers and their keys, currency and the overall
-limit. Advanced settings: a limit per provider, and a percentage for taxes or card fees.
+**Dashboard → Plugins → AI.** Basic settings: what may use AI, providers and their keys, a prepaid credit to count
+down (the amount, the currency it was bought in, usually US dollars, and the date), currency and the overall limit.
+Advanced settings: a limit per provider, and a percentage for taxes or card fees. Providers are listed in a fixed order,
+not an order of preference; for now Anthropic (Claude) is the only one that can be used.
 
 API keys are kept in a file only Jellyfin can read, separate from the plugin settings. They are never shown again,
 logged or included in exports; the settings page can only replace or clear them.
@@ -69,7 +72,7 @@ logged or included in exports; the settings page can only replace or clear them.
 ## Requirements
 
 - Jellyfin 12.1
-- An API key for a cloud provider, or a local OpenAI-compatible service
+- An Anthropic API key (other providers are coming later)
 
 ## Building
 

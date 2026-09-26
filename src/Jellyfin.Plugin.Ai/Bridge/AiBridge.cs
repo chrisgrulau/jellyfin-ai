@@ -14,6 +14,7 @@ using Jellyfin.Plugin.Ai.Configuration;
 using Jellyfin.Plugin.Ai.Keys;
 using Jellyfin.Plugin.Ai.Models;
 using Jellyfin.Plugin.Ai.Pricing;
+using Jellyfin.Plugin.Common.Ai;
 using Jellyfin.Plugin.Common.Resilience;
 
 namespace Jellyfin.Plugin.Ai.Bridge;
@@ -35,14 +36,17 @@ namespace Jellyfin.Plugin.Ai.Bridge;
 /// </summary>
 public static class AiBridge
 {
-    /// <summary>The contract version.</summary>
-    public const int Version = 1;
+    // The contract is declared once, in common's client (FAM-04): these follow it, and a contract test runs the client
+    // against this class, so a rename or a changed signature fails a test instead of becoming "not installed".
+
+    /// <summary>The contract version (the client's <see cref="AiBridgeClient.Version"/>).</summary>
+    public const int Version = AiBridgeClient.Version;
 
     /// <summary>The largest instructions accepted, in characters.</summary>
     public const int MaxInstructions = 16 * 1024;
 
-    /// <summary>The largest data accepted, in characters.</summary>
-    public const int MaxData = 64 * 1024;
+    /// <summary>The largest data accepted, in UTF-8 bytes of its JSON (the client's <see cref="AiBridgeClient.MaxDataBytes"/>).</summary>
+    public const int MaxData = AiBridgeClient.MaxDataBytes;
 
     /// <summary>The largest schema accepted, in characters.</summary>
     public const int MaxSchema = 16 * 1024;
@@ -70,12 +74,12 @@ public static class AiBridge
     {
         if (_keys is null || _spending is null || AiPlugin.Instance?.Configuration is not { } config)
         {
-            return Reply(false, "The AI plugin isn't ready yet.", "transient");
+            return Failed("The AI plugin isn't ready yet.", "transient");
         }
 
         if (Parse(requestJson, config, out var request, out var provider) is { } problem)
         {
-            return Reply(false, problem.Message, problem.Failure);
+            return Failed(problem.Message, problem.Failure);
         }
 
         // Exchange rates are needed to price the call in the user's currency; refreshed at most once a day (AI-02)
@@ -95,23 +99,23 @@ public static class AiBridge
         var (model, why) = AiModels.Create(config, provider!, null, _keys, _spending);
         if (model is null)
         {
-            return Reply(false, why ?? "No AI provider can be used.", "not-configured");
+            return Failed(why ?? "No AI provider can be used.", "not-configured");
         }
 
         try
         {
             var answer = await model.AskAsync(request!, cancellationToken).ConfigureAwait(false);
-            return JsonSerializer.Serialize(new { version = Version, ok = true, answer = answer.Json, model = answer.Model }, Options);
+            return Answered(answer.Json, answer.Model);
         }
         catch (AiException ex)
         {
-            return Reply(false, ex.Message, Name(ex.Failure));
+            return Failed(ex.Message, Name(ex.Failure));
         }
 #pragma warning disable CA1031 // The entry point is documented never to throw: anything unexpected is a transient failure
         catch (Exception ex) when (ex is not OperationCanceledException)
 #pragma warning restore CA1031
         {
-            return Reply(false, "The AI plugin failed (" + ex.GetType().Name + ").", "transient");
+            return Failed("The AI plugin failed (" + ex.GetType().Name + ").", "transient");
         }
         finally
         {
@@ -212,7 +216,7 @@ public static class AiBridge
             return new(string.Create(CultureInfo.InvariantCulture, $"The request's instructions, data or schema are missing or too large (data {dataBytes:N0} of {MaxData:N0} bytes)."), "bad-request");
         }
 
-        provider = config.Providers.FirstOrDefault(p => p is { Enabled: true } && p.Id == KnownProviders.Anthropic)?.Id;
+        provider = config.Providers.FirstOrDefault(p => p is { Enabled: true } && KnownProviders.IsAvailable(p.Id))?.Id;
         if (provider is null)
         {
             return new("No usable AI provider is switched on (only Anthropic Claude is supported so far).", "not-configured");
@@ -282,8 +286,23 @@ public static class AiBridge
         _ => "transient",
     };
 
-    private static string Reply(bool ok, string error, string failure)
-        => JsonSerializer.Serialize(new { version = Version, ok, error, failure }, Options);
+    /// <summary>
+    /// Writes an answer reply.
+    /// </summary>
+    /// <param name="answer">The answer.</param>
+    /// <param name="model">The model that answered.</param>
+    /// <returns>The reply, as JSON.</returns>
+    internal static string Answered(JsonElement answer, string model)
+        => JsonSerializer.Serialize(new { version = Version, ok = true, answer, model }, Options);
+
+    /// <summary>
+    /// Writes a failure reply.
+    /// </summary>
+    /// <param name="error">Why, in words safe to show.</param>
+    /// <param name="failure">The failure name.</param>
+    /// <returns>The reply, as JSON.</returns>
+    internal static string Failed(string error, string failure)
+        => JsonSerializer.Serialize(new { version = Version, ok = false, error, failure }, Options);
 }
 
 /// <summary>

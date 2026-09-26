@@ -49,7 +49,7 @@ public class ProviderSettings
     /// </summary>
     public decimal PrepaidCredit { get; set; }
 
-    /// <summary>Gets or sets the currency the credit was bought in (US dollars for Anthropic).</summary>
+    /// <summary>Gets or sets the currency the credit was bought in (US dollars for Anthropic); set beside the credit on the settings page.</summary>
     public string PrepaidCreditCurrency { get; set; } = "USD";
 
     /// <summary>Gets or sets the date the credit was bought or last topped up (<c>yyyy-MM-dd</c>).</summary>

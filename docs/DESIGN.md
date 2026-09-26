@@ -6,17 +6,22 @@ Working notes for the AI plugin. Descriptive of intent; updated as the implement
 
 The AI plugin owns **text models** for the plugin family; the Subtitles plugin owns speech-to-text. Ingest and
 Subtitles use this plugin only if it is installed and the administrator has allowed them to; without it they leave
-hard cases for review. Plugins never share C# types: callers find this plugin by its id and use a JSON-in/JSON-out
-entry point with BCL types only. Each request carries a purpose tag (`ingest.match`, `subtitles.match` …).
+hard cases for review. Plugins never share C# types: callers find this plugin's entry point by assembly and type name
+(`Jellyfin.Plugin.Ai`, `Jellyfin.Plugin.Ai.Bridge.AiBridge`, declared once in common's `AiBridgeClient` and checked by
+a contract test) and use a JSON-in/JSON-out entry point with BCL types only. Each request carries a purpose tag (`ingest.match`, `subtitles.match` …).
 
 ## Providers and models
 
 | Provider | Notes |
 |---|---|
 | Anthropic (default) | Claude through the official C# SDK (`Anthropic`, pinned and locked; shipped beside the plugin with `Microsoft.Extensions.AI.Abstractions`). Model left empty = Claude Opus 5.5 (`claude-opus-5-5`, US$4 / US$20 per million tokens), updated with plugin releases. Answers use structured output (a JSON schema) at low effort by default; thinking is billed as output. |
-| OpenAI | Curated family map for "current recommended". |
-| Google | Gemini; curated family map. |
-| OpenAI-compatible | Any service speaking the OpenAI API: a local server (Ollama …), OpenRouter, Groq. Local addresses cost nothing. |
+| OpenAI (coming later) | Curated family map for "current recommended". |
+| Google (coming later) | Gemini; curated family map. |
+| OpenAI-compatible (coming later) | Any service speaking the OpenAI API: a local server (Ollama …), OpenRouter, Groq. Local addresses cost nothing. |
+
+Only Anthropic is available in this version. The settings page shows the others as "coming later" without any fields,
+sends back whatever was saved for them unchanged, and the spending checks leave them out. The providers are kept in a
+fixed order (`KnownProviders.All`); it isn't an order of preference.
 
 A named model is pinned; the settings page notes that a pinned model may cost more than the automatic choice and can be
 retired by the provider.

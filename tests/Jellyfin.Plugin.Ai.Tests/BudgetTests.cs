@@ -19,6 +19,9 @@ public class BudgetTests
         return c;
     }
 
+    // The rules themselves, as they'll apply once every provider can be used
+    private static System.Collections.Generic.IReadOnlyList<BudgetMessage> EveryProvider(PluginConfiguration c) => BudgetRules.Check(c, _ => true);
+
     private static ProviderSettings P(string id, ProviderBudgetMode mode = ProviderBudgetMode.OverallOnly, decimal value = 0, string url = "")
         => new() { Id = id, Enabled = true, BudgetMode = mode, BudgetValue = value, BaseUrl = url };
 
@@ -58,7 +61,7 @@ public class BudgetTests
     {
         var c = Config(10m, false, P(KnownProviders.Anthropic), P(KnownProviders.OpenAi));
 
-        var m = Assert.Single(BudgetRules.Check(c));
+        var m = Assert.Single(EveryProvider(c));
         Assert.Equal(BudgetSeverity.Warning, m.Severity);
         Assert.Contains("one provider", m.Message, System.StringComparison.Ordinal);
     }
@@ -68,7 +71,7 @@ public class BudgetTests
     {
         var c = Config(10m, false, P(KnownProviders.Anthropic, ProviderBudgetMode.Amount, 8m), P(KnownProviders.OpenAi, ProviderBudgetMode.PercentOfOverall, 50m));
 
-        var m = Assert.Single(BudgetRules.Check(c));
+        var m = Assert.Single(EveryProvider(c));
         Assert.Contains("AUD 13.00", m.Message, System.StringComparison.Ordinal);
         Assert.Contains("AUD 10.00", m.Message, System.StringComparison.Ordinal);
     }
@@ -78,7 +81,7 @@ public class BudgetTests
     {
         var c = Config(10m, false, P(KnownProviders.Anthropic, ProviderBudgetMode.Amount, 6m), P(KnownProviders.OpenAi, ProviderBudgetMode.PercentOfOverall, 40m));
 
-        Assert.Empty(BudgetRules.Check(c));
+        Assert.Empty(EveryProvider(c));
         Assert.Equal(4m, BudgetRules.ProviderLimit(c.Providers.Single(p => p.Id == KnownProviders.OpenAi), 10m));
     }
 
@@ -87,7 +90,7 @@ public class BudgetTests
     {
         var c = Config(10m, true, P(KnownProviders.Anthropic, ProviderBudgetMode.PercentOfOverall, 50m));
 
-        Assert.Contains(BudgetRules.Check(c), m => m.Severity == BudgetSeverity.Error);
+        Assert.Contains(EveryProvider(c), m => m.Severity == BudgetSeverity.Error);
     }
 
     [Fact]
@@ -95,7 +98,7 @@ public class BudgetTests
     {
         var c = Config(10m, true, P(KnownProviders.Anthropic));
 
-        var m = Assert.Single(BudgetRules.Check(c));
+        var m = Assert.Single(EveryProvider(c));
         Assert.Contains("No spending limit for Anthropic", m.Message, System.StringComparison.Ordinal);
     }
 
@@ -104,7 +107,7 @@ public class BudgetTests
     {
         var c = Config(10m, true, P(KnownProviders.Anthropic, ProviderBudgetMode.Amount, 3m));
 
-        Assert.Empty(BudgetRules.Check(c));
+        Assert.Empty(EveryProvider(c));
     }
 
     [Theory]
@@ -115,7 +118,7 @@ public class BudgetTests
     {
         var c = Config(10m, true, P(KnownProviders.OpenAiCompatible, url: url));
 
-        Assert.DoesNotContain(BudgetRules.Check(c), m => m.Message.Contains("OpenAI-compatible", System.StringComparison.Ordinal));
+        Assert.DoesNotContain(EveryProvider(c), m => m.Message.Contains("OpenAI-compatible", System.StringComparison.Ordinal));
     }
 
     [Fact]
@@ -123,6 +126,22 @@ public class BudgetTests
     {
         var c = Config(10m, true, P(KnownProviders.OpenAiCompatible, url: "https://openrouter.ai/api/v1"));
 
-        Assert.Contains(BudgetRules.Check(c), m => m.Message.Contains("OpenAI-compatible", System.StringComparison.Ordinal));
+        Assert.Contains(EveryProvider(c), m => m.Message.Contains("OpenAI-compatible", System.StringComparison.Ordinal));
+    }
+
+    // Review pass 3: FAM-08. Providers that can't be used yet make no calls and can't be changed on the page, so their
+    // saved settings are kept but never warn or block saving
+    [Fact]
+    public void Providers_not_available_yet_are_kept_but_not_checked()
+    {
+        var c = Config(10m, true, P(KnownProviders.Anthropic, ProviderBudgetMode.Amount, 3m), P(KnownProviders.OpenAi, ProviderBudgetMode.PercentOfOverall, 50m));
+
+        Assert.Contains(EveryProvider(c), m => m.Severity == BudgetSeverity.Error);
+        Assert.Empty(BudgetRules.Check(c));
+        var openAi = c.Providers.Single(p => p.Id == KnownProviders.OpenAi);
+        Assert.True(openAi.Enabled);
+        Assert.Equal(50m, openAi.BudgetValue);
+        Assert.True(KnownProviders.IsAvailable(KnownProviders.Anthropic));
+        Assert.DoesNotContain(KnownProviders.All, id => id != KnownProviders.Anthropic && KnownProviders.IsAvailable(id));
     }
 }

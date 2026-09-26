@@ -20,6 +20,22 @@ All notable changes to this project are documented here. The format follows
   - `bad-request`.
 
   Before, all of these were `not-allowed`.
+- **AI-04:** a call that Claude answered and billed, but whose answer couldn't be used (a refusal, an answer cut off at
+  the output limit, invalid JSON), is recorded in the spending ledger at the tokens it actually used. Before, its
+  reservation was released, so the ledger under-counted. "Cut off" is recognised by the reply's stop reason, not by
+  the wording of the message.
+- **FAM-04:** the entry point's version and data limit now come from common's `AiBridgeClient` (the shared code is
+  updated to its current version), so the two sides can't drift. A contract test runs the real client against this
+  plugin: its finder locates the entry point, the entry point accepts the client's own request, and the client reads
+  the entry point's replies. DESIGN now says callers find the plugin by assembly and type name, not by its id.
+- **FAM-08:** OpenAI, Google and OpenAI-compatible providers are shown as "coming later", with no fields to fill in,
+  since this version can't use them. Anything saved for them earlier is kept as it was, and it no longer produces
+  spending warnings or blocks saving. The docs no longer call the provider list an order of preference (it's a fixed
+  order). The currency a prepaid credit was bought in can now be set on the page; before, it could only stay USD.
+- **FAM-07 (settings page):** saving or clearing a key shows the server's own reason when it fails (before, every
+  failure, including a server error, said "That doesn't look like an API key."). Status messages, test results and
+  spending warnings are announced to screen readers, labels are linked to their inputs, and the "set" marker and
+  warnings no longer rely on colours that are hard to read in the light theme.
 - **AI-05, DOC-03:** the docs now match the default model (Claude Opus 5.5) and the entry point that exists. The
   README lists what each plugin sends.
 

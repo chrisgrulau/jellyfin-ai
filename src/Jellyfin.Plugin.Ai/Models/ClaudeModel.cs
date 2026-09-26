@@ -33,11 +33,24 @@ public sealed class ClaudeModel : IAiModel, IDisposable
     /// <param name="apiKey">The Anthropic API key.</param>
     /// <param name="model">The model, or empty for <see cref="DefaultModel"/>.</param>
     public ClaudeModel(string apiKey, string? model)
+        : this(apiKey, model, null)
+    {
+    }
+
+    /// <summary>
+    /// Initializes a new instance of the <see cref="ClaudeModel"/> class that sends through the given client (tests).
+    /// </summary>
+    /// <param name="apiKey">The Anthropic API key.</param>
+    /// <param name="model">The model, or empty for <see cref="DefaultModel"/>.</param>
+    /// <param name="http">The HTTP client to send through, or <c>null</c> for the SDK's own.</param>
+    internal ClaudeModel(string apiKey, string? model, System.Net.Http.HttpClient? http)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(apiKey);
         _key = apiKey;
         Model = string.IsNullOrWhiteSpace(model) ? DefaultModel : model.Trim();
-        _client = new AnthropicClient { ApiKey = apiKey, Timeout = TimeSpan.FromMinutes(5) };
+        _client = http is null
+            ? new AnthropicClient { ApiKey = apiKey, Timeout = TimeSpan.FromMinutes(5) }
+            : new AnthropicClient { ApiKey = apiKey, Timeout = TimeSpan.FromMinutes(5), HttpClient = http, MaxRetries = 0 };
     }
 
     /// <inheritdoc />
@@ -98,14 +111,15 @@ public sealed class ClaudeModel : IAiModel, IDisposable
             throw Fail("Claude answered with an error: " + Safe(ex.Message), ex, FailureClass.Transient);
         }
 
+        // From here on the call was answered, so it was billed: a failure carries the usage for the ledger (AI-04)
         if (response.StopReason == "refusal")
         {
-            throw Fail("Claude declined to answer this request.", null, FailureClass.BadRequest);
+            throw Billed("Claude declined to answer this request.", null, FailureClass.BadRequest, response);
         }
 
         if (response.StopReason == "max_tokens")
         {
-            throw Fail("Claude's answer was cut off (it needed more than " + request.MaxOutputTokens + " tokens).", null, FailureClass.BadRequest);
+            throw Billed("Claude's answer was cut off (it needed more than " + request.MaxOutputTokens + " tokens).", null, FailureClass.BadRequest, response);
         }
 
         var text = string.Concat(response.Content.Select(b => b.Value).OfType<TextBlock>().Select(t => t.Text));
@@ -116,7 +130,7 @@ public sealed class ClaudeModel : IAiModel, IDisposable
         }
         catch (JsonException ex)
         {
-            throw Fail("Claude's answer wasn't valid JSON.", ex, FailureClass.Transient);
+            throw Billed("Claude's answer wasn't valid JSON.", ex, FailureClass.Transient, response);
         }
     }
 
@@ -127,4 +141,14 @@ public sealed class ClaudeModel : IAiModel, IDisposable
 
     private AiException Fail(string message, Exception? inner, FailureClass failure)
         => inner is null ? new AiException(message) { Failure = failure } : new AiException(Safe(message), inner) { Failure = failure };
+
+    // A failure after a billed reply: the ledger records what it actually used (AI-04)
+    private AiException Billed(string message, Exception? inner, FailureClass failure, Message response)
+    {
+        var model = response.Model ?? Model;
+        var (input, output) = (response.Usage.InputTokens, response.Usage.OutputTokens);
+        return inner is null
+            ? new AiException(message) { Failure = failure, Charged = true, ChargedModel = model, InputTokens = input, OutputTokens = output }
+            : new AiException(Safe(message), inner) { Failure = failure, Charged = true, ChargedModel = model, InputTokens = input, OutputTokens = output };
+    }
 }
