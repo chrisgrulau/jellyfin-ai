@@ -51,8 +51,11 @@ retired by the provider.
   SECURITY.md. Each calling plugin is opt-in.
 - **Keys**: an owner-only file separate from the configuration; write-only through the settings API; never in URLs,
   logs, alerts or exports; provider error bodies redacted before logging.
-- **Cross-plugin entry point**: in-process, identified by plugin id, versioned JSON contract, size limits; no public,
-  unauthenticated HTTP endpoint.
+- **Cross-plugin entry point**: in-process, versioned JSON contract, size limits; no public, unauthenticated HTTP
+  endpoint. Implemented as `Jellyfin.Plugin.Ai.Bridge.AiBridge.AskAsync(string, CancellationToken)`, found by the
+  callers (through jellyfin-plugin-common) by assembly and type name. Version 1 request: `version`, `caller` (`ingest` or
+  `subtitles`), `purpose` (must start with the caller), `instructions`, `data`, `schema`, `maxOutputTokens` (256–16000),
+  `effort` (`low`/`medium`/`high`); reply: `ok` with `answer` and `model`, or `error` with a `failure` class.
 
 ## Failures
 
