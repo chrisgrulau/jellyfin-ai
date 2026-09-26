@@ -13,5 +13,7 @@ description: >
 category: "General"
 artifacts:
   - "Jellyfin.Plugin.Ai.dll"
+  - "Anthropic.dll"
+  - "Microsoft.Extensions.AI.Abstractions.dll"
 changelog: >
   Initial scaffolding.

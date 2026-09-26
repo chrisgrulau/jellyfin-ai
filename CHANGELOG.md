@@ -5,6 +5,21 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- **Claude calls.** The plugin can now ask Claude (Anthropic), through the official Anthropic SDK. It uses Claude Opus
+  5.5 unless you name another model.
+  - Answers are constrained to a JSON schema.
+  - Instructions and data are kept apart, and the data is marked as untrusted, so text in file names can't steer it.
+  - Low effort is the default, to keep decisions cheap.
+- **Spending.** Every call reserves its most possible cost (input plus the whole output allowance) against the monthly
+  limits before it is made, and records the actual cost from the reply's token counts; a failed call isn't counted.
+  - Prices ship with the plugin, dated 2026-09-26, for Claude Opus 5.5, Opus 5, Sonnet 5 and Haiku 4.5.
+  - Unknown prices or exchange rates mean no call.
+  - The settings page shows this month's spending.
+- **Test** on the settings page sends one tiny request (a fraction of a cent) and shows the model, the time taken, the
+  tokens used and the cost.
+
 ### Changed
 
 - Shared code updated (COM-03, COM-04, COM-05). Whether an OpenAI-compatible service is local (and so free, outside

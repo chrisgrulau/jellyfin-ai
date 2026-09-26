@@ -13,7 +13,7 @@ entry point with BCL types only. Each request carries a purpose tag (`ingest.mat
 
 | Provider | Notes |
 |---|---|
-| Anthropic (default) | Claude through the official C# SDK. Model left empty = the newest Sonnet, resolved automatically (refreshed daily, logged). |
+| Anthropic (default) | Claude through the official C# SDK (`Anthropic`, pinned and locked; shipped beside the plugin with `Microsoft.Extensions.AI.Abstractions`). Model left empty = Claude Opus 5.5 (`claude-opus-5-5`, US$4 / US$20 per million tokens), updated with plugin releases. Answers use structured output (a JSON schema) at low effort by default; thinking is billed as output. |
 | OpenAI | Curated family map for "current recommended". |
 | Google | Gemini; curated family map. |
 | OpenAI-compatible | Any service speaking the OpenAI API: a local server (Ollama …), OpenRouter, Groq. Local addresses cost nothing. |

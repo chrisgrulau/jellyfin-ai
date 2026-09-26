@@ -13,8 +13,8 @@ A [Jellyfin](https://jellyfin.org) plugin that gives the other plugins in the fa
 optional, budget-controlled access to AI models, for decisions they can't make on their own: which of two close
 candidate titles a release is, or whether a subtitle really matches the dialogue.
 
-> **Status:** early development. The settings page (providers, keys, spending limits) is in place; the model calls
-> and the entry point the other plugins use are next.
+> **Status:** early development. The settings page (providers, keys, spending limits) and Claude calls, kept within
+> the spending limits, are in place; the entry point the other plugins use is next.
 
 ## How it fits together
 
