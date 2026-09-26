@@ -123,25 +123,10 @@ public static class BudgetRules
         return messages;
     }
 
-    // Local servers (an OpenAI-compatible address on this machine or network) cost nothing
+    // Local servers (an OpenAI-compatible address on this machine or network) cost nothing. A local relay to a paid service
+    // (LiteLLM, an OpenRouter proxy) is also treated as free; the settings page says so
     private static bool IsLocal(ProviderSettings p)
-        => string.Equals(p.Id, KnownProviders.OpenAiCompatible, StringComparison.Ordinal)
-            && Uri.TryCreate(p.BaseUrl, UriKind.Absolute, out var uri)
-            && (uri.IsLoopback || uri.Host.EndsWith(".local", StringComparison.OrdinalIgnoreCase) || IsPrivateAddress(uri));
-
-    private static bool IsPrivateAddress(Uri uri)
-        => System.Net.IPAddress.TryParse(uri.Host, out var ip) && (ip.IsIPv6LinkLocal || ip.IsIPv6UniqueLocal || IsPrivateV4(ip));
-
-    private static bool IsPrivateV4(System.Net.IPAddress ip)
-    {
-        if (ip.AddressFamily != System.Net.Sockets.AddressFamily.InterNetwork)
-        {
-            return false;
-        }
-
-        var b = ip.GetAddressBytes();
-        return b[0] == 10 || (b[0] == 172 && b[1] is >= 16 and <= 31) || (b[0] == 192 && b[1] == 168);
-    }
+        => string.Equals(p.Id, KnownProviders.OpenAiCompatible, StringComparison.Ordinal) && Common.NetworkAddress.IsLocal(p.BaseUrl);
 
     private static string Name(ProviderSettings p) => p.Id switch
     {

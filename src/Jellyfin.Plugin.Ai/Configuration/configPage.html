@@ -130,7 +130,7 @@
               (set ? '<button is="emby-button" type="button" class="raised button-alt p-clearkey"><span>Clear</span></button>' : '') + '</div>' +
               '<div>' +
               '<div class="inputContainer"><label class="inputLabel inputLabelUnfocused">Model</label><input is="emby-input" type="text" class="p-model" value="' + esc(v.Model) + '" placeholder="' + esc(p[2]) + '" /></div>' +
-              (p[0] === 'openai-compatible' ? '<div class="inputContainer"><label class="inputLabel inputLabelUnfocused">Address</label><input is="emby-input" type="url" class="p-url" value="' + esc(v.BaseUrl) + '" placeholder="http://localhost:11434/v1" /></div>' : '') +
+              (p[0] === 'openai-compatible' ? '<div class="inputContainer"><label class="inputLabel inputLabelUnfocused">Address</label><input is="emby-input" type="url" class="p-url" value="' + esc(v.BaseUrl) + '" placeholder="http://localhost:11434/v1" /><div class="fieldDescription">An address on this server or your local network counts as free: it has no spending limit. If it relays to a paid service (for example LiteLLM or an OpenRouter proxy), set a limit in that service.</div></div>' : '') +
               '</div></div>';
           }).join('') + '<p class="ai-muted">Leave the model empty to use the current recommended model, updated automatically. Naming a model pins it: it may cost more than the automatic choice, and the provider may retire it.</p>';
           renderLimits();
