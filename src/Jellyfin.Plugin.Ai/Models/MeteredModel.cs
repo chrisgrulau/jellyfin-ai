@@ -10,7 +10,7 @@ namespace Jellyfin.Plugin.Ai.Models;
 /// <summary>
 /// A paid model kept within the spending limits: each call's most it could cost (input plus the whole output
 /// allowance) is reserved before it is made, and what it actually cost (from the reply's token counts) is recorded
-/// afterwards; a failed call is released. Unknown prices or exchange rates, or going over a limit, mean no call.
+/// afterwards, also when a billed reply turns out unusable; a call that was never answered is released. Unknown prices or exchange rates, or going over a limit, mean no call.
 /// </summary>
 public sealed class MeteredModel : IAiModel
 {
@@ -58,26 +58,30 @@ public sealed class MeteredModel : IAiModel
         try
         {
             var answer = await _inner.AskAsync(request, cancellationToken).ConfigureAwait(false);
-            var actual = _spending.Cost(Provider, answer.Model, answer.InputTokens, answer.OutputTokens)
-                ?? _spending.Cost(Provider, Model, answer.InputTokens, answer.OutputTokens)
-                ?? estimate;
-            _spending.Ledger.Settle(reservation, actual);
-            LastCost = actual;
+            LastCost = Settle(reservation, estimate, answer.Model, answer.InputTokens, answer.OutputTokens);
             return answer;
+        }
+        catch (AiException ex) when (ex.Charged)
+        {
+            // Answered and billed, but unusable (a refusal, cut off, unreadable): recorded at what it used (AI-04)
+            LastCost = Settle(reservation, estimate, ex.ChargedModel, ex.InputTokens, ex.OutputTokens);
+            throw;
         }
         catch (Exception ex) when (ex is AiException or OperationCanceledException)
         {
-            // A refused or failed request isn't charged; a cut-off answer is (it used its whole allowance)
-            if (ex is AiException { Message: var m } && m.Contains("cut off", StringComparison.Ordinal))
-            {
-                _spending.Ledger.Settle(reservation, estimate);
-            }
-            else
-            {
-                _spending.Ledger.Release(reservation);
-            }
-
+            // Refused or never answered: not charged
+            _spending.Ledger.Release(reservation);
             throw;
         }
+    }
+
+    // Records a billed call at its actual cost: the answering model's price, else the requested model's, else the estimate
+    private Money Settle(Guid reservation, Money estimate, string? model, long inputTokens, long outputTokens)
+    {
+        var actual = (model is null ? null : _spending.Cost(Provider, model, inputTokens, outputTokens))
+            ?? _spending.Cost(Provider, Model, inputTokens, outputTokens)
+            ?? estimate;
+        _spending.Ledger.Settle(reservation, actual);
+        return actual;
     }
 }

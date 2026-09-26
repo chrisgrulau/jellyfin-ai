@@ -20,6 +20,10 @@ All notable changes to this project are documented here. The format follows
   - `bad-request`.
 
   Before, all of these were `not-allowed`.
+- **AI-04:** a call that Claude answered and billed, but whose answer couldn't be used (a refusal, an answer cut off at
+  the output limit, invalid JSON), is recorded in the spending ledger at the tokens it actually used. Before, its
+  reservation was released, so the ledger under-counted. "Cut off" is recognised by the reply's stop reason, not by
+  the wording of the message.
 - **AI-05, DOC-03:** the docs now match the default model (Claude Opus 5.5) and the entry point that exists. The
   README lists what each plugin sends.
 

@@ -82,6 +82,22 @@ public sealed class AiException : Exception
 
     /// <summary>Gets what kind of failure it was (decides retries and alerts).</summary>
     internal Common.Resilience.FailureClass Failure { get; init; } = Common.Resilience.FailureClass.Transient;
+
+    /// <summary>
+    /// Gets a value indicating whether the provider billed the call even so (it answered, but the answer was a refusal,
+    /// was cut off or couldn't be read). The spending ledger then records <see cref="InputTokens"/> and
+    /// <see cref="OutputTokens"/> rather than releasing the reservation.
+    /// </summary>
+    internal bool Charged { get; init; }
+
+    /// <summary>Gets the model that was billed, when <see cref="Charged"/> and the provider named it.</summary>
+    internal string? ChargedModel { get; init; }
+
+    /// <summary>Gets the input tokens billed, when <see cref="Charged"/>.</summary>
+    internal long InputTokens { get; init; }
+
+    /// <summary>Gets the output tokens billed (thinking included), when <see cref="Charged"/>.</summary>
+    internal long OutputTokens { get; init; }
 }
 
 /// <summary>
