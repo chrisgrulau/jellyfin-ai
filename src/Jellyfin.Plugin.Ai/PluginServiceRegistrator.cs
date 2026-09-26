@@ -24,6 +24,10 @@ public class PluginServiceRegistrator : IPluginServiceRegistrator
         serviceCollection.AddSingleton(sp => new ApiKeyStore(
             Path.Combine(sp.GetRequiredService<IApplicationPaths>().PluginsPath, typeof(AiPlugin).Assembly.GetName().Name!, "keys.json")));
 
+        // A log of AI calls for the settings page (never what was sent), owner-only, trimmed to 1,000 calls or 30 days
+        serviceCollection.AddSingleton(sp => new Calls.CallLog(
+            Path.Combine(sp.GetRequiredService<IApplicationPaths>().PluginsPath, typeof(AiPlugin).Assembly.GetName().Name!, Calls.CallLog.FileName)));
+
         // The entry point the other plugins use (in-process, JSON in and out)
         serviceCollection.AddHostedService<Bridge.AiBridgeHost>();
     }

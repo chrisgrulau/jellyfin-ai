@@ -32,7 +32,7 @@ it contains (`Jellyfin.Plugin.Ai.dll`, `Anthropic.dll`, `Microsoft.Extensions.AI
 Then open **Dashboard → Plugins → Shoal AI**: add a Claude API key, press **Test**, and allow Ingest and Subtitles to use
 it. Nothing is sent anywhere until you do.
 
-Uninstalling leaves the plugin's data folder (`keys.json`, `spend.json`, `rates.json`); delete it by hand if you like.
+Uninstalling leaves the plugin's data folder (`keys.json`, `spend.json`, `rates.json`, `calls.jsonl`); delete it by hand if you like.
 
 ## How it fits together
 
@@ -57,13 +57,30 @@ paths, user names, or anything from home video and photo libraries. What each pl
 | Ingest | A close match | The file name; candidate titles, years and kinds |
 | Ingest | An episode named by title, or with no usable name | Also the season's episode titles, years and short synopses; for no usable name, up to 4,000 characters of transcribed dialogue |
 | Subtitles | The wording differs from what is said, or an audit | The subtitle language, a few minutes of heard phrases and the subtitle lines around them |
- See [SECURITY.md](SECURITY.md) and [docs/DESIGN.md](docs/DESIGN.md).
+
+See [SECURITY.md](SECURITY.md) and [docs/DESIGN.md](docs/DESIGN.md).
+
+### The call log
+
+The settings page lists recent AI calls (filterable by plugin) and shows the last error while nothing has succeeded
+since. For each call (from Ingest, Subtitles or the **Test** button) it keeps: the time, the plugin and purpose
+(`ingest.match` …), the provider and model, the outcome (answered, refused by the spending limits, or failed and why),
+the tokens billed, the cost (in the provider's currency, and in yours when exchange rates are known), how long it took,
+and either a summary of the answer's shape (field names, numbers and yes/no values; text only by its length) or the
+error message, with API keys removed and cut to 300 characters.
+
+**Never logged:** the instructions, data or schema sent (only their size in bytes), the text of the answer, file paths,
+or API keys. Calls from a plugin you haven't allowed aren't logged either.
+
+The log is `calls.jsonl` in the plugin's data folder, readable only by Jellyfin, and keeps the last 1,000 calls from the
+last 30 days (at most 1 MB). Switch it off with **Keep a log of AI calls**, or empty it with **Clear log**.
 
 ## Settings
 
 **Dashboard → Plugins → AI.** Basic settings: what may use AI, providers and their keys, a prepaid credit to count
 down (the amount, the currency it was bought in, usually US dollars, and the date), currency and the overall limit.
-Advanced settings: a limit per provider, and a percentage for taxes or card fees. Providers are listed in a fixed order,
+A log of recent calls (on by default; see [The call log](#the-call-log)). Advanced settings: a limit per provider, and a
+percentage for taxes or card fees. Providers are listed in a fixed order,
 not an order of preference; for now Anthropic (Claude) is the only one that can be used.
 
 API keys are kept in a file only Jellyfin can read, separate from the plugin settings. They are never shown again,

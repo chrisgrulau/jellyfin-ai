@@ -9,6 +9,7 @@ using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using Jellyfin.Plugin.Ai.Budgets;
+using Jellyfin.Plugin.Ai.Calls;
 using Jellyfin.Plugin.Ai.Configuration;
 using Jellyfin.Plugin.Ai.Keys;
 using Microsoft.AspNetCore.Authorization;
@@ -30,6 +31,7 @@ public class AiController : ControllerBase
     private readonly ApiKeyStore _keys;
     private readonly Pricing.AiSpending _spending;
     private readonly IHttpClientFactory _http;
+    private readonly CallLog _log;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="AiController"/> class.
@@ -37,8 +39,10 @@ public class AiController : ControllerBase
     /// <param name="keys">The key store.</param>
     /// <param name="spending">Prices, spend ledger and exchange rates.</param>
     /// <param name="http">HTTP client factory (for exchange rates).</param>
-    public AiController(ApiKeyStore keys, Pricing.AiSpending spending, IHttpClientFactory http)
+    /// <param name="log">The call log.</param>
+    public AiController(ApiKeyStore keys, Pricing.AiSpending spending, IHttpClientFactory http, CallLog log)
     {
+        _log = log ?? throw new ArgumentNullException(nameof(log));
         _spending = spending ?? throw new ArgumentNullException(nameof(spending));
         _http = http ?? throw new ArgumentNullException(nameof(http));
         _keys = keys ?? throw new ArgumentNullException(nameof(keys));
@@ -111,23 +115,27 @@ public class AiController : ControllerBase
         }
 
         var (model, problem) = Models.AiModels.Create(config, request.Provider ?? string.Empty, request.Model, _keys, _spending);
+        var context = Bridge.AiBridge.Context("test", config, _keys, _spending, request.Provider);
         if (model is null)
         {
+            _log.RecordProblem(context, TestPurpose, request.Provider, 0, problem ?? "Can't be used.", "not-configured");
             return new TestResult(false, problem ?? "Can't be used.");
         }
 
         var clock = System.Diagnostics.Stopwatch.StartNew();
         try
         {
-            var answer = await model.AskAsync(
+            var answer = await _log.AskAsync(
+                model,
                 new Models.AiRequest
                 {
-                    Purpose = "ai.test",
+                    Purpose = TestPurpose,
                     Instructions = "This is a connection test. Answer with ok set to true.",
                     Data = "{}",
                     Schema = TestSchema,
                     MaxOutputTokens = 1024,
                 },
+                context,
                 cancellationToken).ConfigureAwait(false);
             var cost = (model as Models.MeteredModel)?.LastCost;
             return new TestResult(true, string.Create(CultureInfo.InvariantCulture, $"Connected: {answer.Model} answered in {clock.Elapsed.TotalSeconds:0.0} s ({answer.InputTokens} + {answer.OutputTokens} tokens{(cost is { } c ? ", " + c : string.Empty)})."));
@@ -140,6 +148,41 @@ public class AiController : ControllerBase
         {
             (model as IDisposable)?.Dispose();
         }
+    }
+
+    /// <summary>
+    /// Recent AI calls, newest first, and the last error if it is newer than the last answered call. Never what was sent.
+    /// </summary>
+    /// <param name="limit">The most calls to return (1 to 1,000; 100 by default).</param>
+    /// <param name="caller">Only this caller's calls (<c>ingest</c>, <c>subtitles</c>, <c>test</c>), or all.</param>
+    /// <returns>The calls.</returns>
+    [HttpGet("Calls")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    public ActionResult<CallLogView> Calls([FromQuery] int? limit, [FromQuery] string? caller)
+    {
+        var config = AiPlugin.Instance?.Configuration ?? new PluginConfiguration();
+        return _log.View(limit ?? 100, caller, config.KeepCallLog);
+    }
+
+    /// <summary>
+    /// Empties the call log.
+    /// </summary>
+    /// <returns>No content.</returns>
+    [HttpDelete("Calls")]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType(StatusCodes.Status500InternalServerError)]
+    public ActionResult ClearCalls()
+    {
+        try
+        {
+            _log.Clear();
+        }
+        catch (Exception ex) when (ex is System.IO.IOException or UnauthorizedAccessException)
+        {
+            return Problem("The call log couldn't be cleared: " + ex.GetType().Name + ".");
+        }
+
+        return NoContent();
     }
 
     /// <summary>
@@ -179,6 +222,8 @@ public class AiController : ControllerBase
             .OfType<Pricing.CreditLeft>()
             .ToList();
     }
+
+    private const string TestPurpose = "ai.test";
 
     private static readonly IReadOnlyDictionary<string, JsonElement> TestSchema = new Dictionary<string, JsonElement>
     {

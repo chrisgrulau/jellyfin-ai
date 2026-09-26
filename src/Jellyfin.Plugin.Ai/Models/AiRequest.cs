@@ -93,6 +93,12 @@ public sealed class AiException : Exception
     /// <summary>Gets the model that was billed, when <see cref="Charged"/> and the provider named it.</summary>
     internal string? ChargedModel { get; init; }
 
+    /// <summary>
+    /// Gets a value indicating whether the spending limits refused the call before anything was sent (its
+    /// <see cref="Failure"/> is then <see cref="Common.Resilience.FailureClass.ProviderLimit"/>).
+    /// </summary>
+    internal bool RefusedByLimits { get; init; }
+
     /// <summary>Gets the input tokens billed, when <see cref="Charged"/>.</summary>
     internal long InputTokens { get; init; }
 

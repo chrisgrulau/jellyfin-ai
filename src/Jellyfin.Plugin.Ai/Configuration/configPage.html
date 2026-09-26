@@ -22,6 +22,12 @@
       #AiConfigPage .ai-warning { padding: .75em 1em; border-radius: 4px; margin: .5em 0; background: rgba(255,170,0,.15); border-left: 4px solid rgba(255,170,0,.8); }
       #AiConfigPage .ai-error { padding: .75em 1em; border-radius: 4px; margin: .5em 0; background: rgba(220,50,50,.2); border-left: 4px solid rgba(220,50,50,.9); }
       #AiConfigPage .ai-limit { display: grid; grid-template-columns: minmax(10em, 1fr) minmax(12em, 1fr) minmax(8em, .8fr); gap: .5em 1em; align-items: end; padding: .5em 0; }
+      #AiConfigPage .ai-calls-bar { display: flex; gap: .5em 1em; align-items: end; flex-wrap: wrap; margin: .5em 0; }
+      #AiConfigPage .ai-calls-bar .selectContainer { margin: 0; min-width: 12em; }
+      #AiConfigPage .ai-calls-wrap { overflow-x: auto; }
+      #AiConfigPage table.ai-calls { width: 100%; border-collapse: collapse; font-size: .9em; }
+      #AiConfigPage table.ai-calls th, #AiConfigPage table.ai-calls td { text-align: left; padding: .35em .5em; border-bottom: 1px solid rgba(128,128,128,.2); vertical-align: top; }
+      #AiConfigPage table.ai-calls td.ai-num { text-align: right; white-space: nowrap; }
       @media (max-width: 720px) { #AiConfigPage .ai-provider, #AiConfigPage .ai-limit { grid-template-columns: 1fr; } }
     </style>
     <div data-role="content">
@@ -79,6 +85,31 @@
           </div>
           <div id="SpendingNow" class="ai-muted" style="margin:.5em 0 1em"></div>
           <div id="BudgetMessages" aria-live="polite"></div>
+
+          <h3 class="sectionTitle" style="margin-top:1.5em">Recent calls</h3>
+          <div class="checkboxContainer checkboxContainer-withDescription">
+            <label class="emby-checkbox-label">
+              <input id="KeepCallLog" type="checkbox" is="emby-checkbox" />
+              <span>Keep a log of AI calls</span>
+            </label>
+            <div class="fieldDescription checkboxFieldDescription">Records the time, which plugin asked and why, the model, the outcome, tokens, cost and duration of each call, for the last 1,000 calls or 30 days. Never what was sent: only its size. Kept on this server in a file only Jellyfin can read.</div>
+          </div>
+          <div id="LastError" role="status" aria-live="polite"></div>
+          <div class="ai-calls-bar">
+            <div class="selectContainer">
+              <label class="selectLabel" for="CallsCaller">Show calls from</label>
+              <select is="emby-select" id="CallsCaller">
+                <option value="">All</option>
+                <option value="ingest">Ingest</option>
+                <option value="subtitles">Subtitles</option>
+                <option value="test">Test button</option>
+                <option value="other">Other</option>
+              </select>
+            </div>
+            <button is="emby-button" type="button" class="raised" id="CallsRefresh"><span>Refresh</span></button>
+            <button is="emby-button" type="button" class="raised button-alt" id="CallsClear"><span>Clear log</span></button>
+          </div>
+          <div id="Calls" class="ai-calls-wrap"></div>
 
           <details class="ai-advanced">
             <summary>Advanced settings</summary>
@@ -188,6 +219,7 @@
           c.Enabled = page.querySelector('#Enabled').checked;
           c.AllowIngest = page.querySelector('#AllowIngest').checked;
           c.AllowSubtitles = page.querySelector('#AllowSubtitles').checked;
+          c.KeepCallLog = page.querySelector('#KeepCallLog').checked;
           c.Currency = page.querySelector('#Currency').value;
           c.OverallMonthlyBudget = Math.max(0, parseFloat(page.querySelector('#OverallMonthlyBudget').value) || 0);
           c.NoOverallLimit = page.querySelector('#NoOverallLimit').checked;
@@ -263,6 +295,63 @@
           return ApiClient.getJSON(ApiClient.getUrl('Ai/Keys')).then(renderProviders).then(loadCredit);
         }
 
+        // Recent AI calls and the last error, newest first (never what was sent)
+        var clearArmed = null;
+        function money(amount, currency) {
+          return currency + ' ' + Number(amount).toFixed(amount > 0 && amount < 0.01 ? 4 : 2);
+        }
+        function callCost(c) {
+          if (c.Cost == null) { return c.Outcome === 'answered' ? 'unknown' : '–'; }
+          var own = money(c.Cost, c.CostCurrency);
+          return c.DisplayCost != null && c.DisplayCurrency !== c.CostCurrency ? money(c.DisplayCost, c.DisplayCurrency) + ' (' + own + ')' : own;
+        }
+        function callOutcome(c) {
+          if (c.Outcome === 'answered') { return 'Answered'; }
+          var what = c.Outcome === 'refused' ? 'Refused by limits' : 'Failed' + (c.Failure ? ' (' + c.Failure + ')' : '');
+          return what + (c.Error ? ': ' + c.Error : '');
+        }
+        function when(t) { var d = new Date(t); return isNaN(d) ? String(t) : d.toLocaleString(); }
+        function loadCalls() {
+          var caller = page.querySelector('#CallsCaller').value;
+          var url = ApiClient.getUrl('Ai/Calls', caller ? { limit: 100, caller: caller } : { limit: 100 });
+          return ApiClient.getJSON(url).then(function (v) {
+            var e = v.LastError;
+            page.querySelector('#LastError').innerHTML = e
+              ? '<div class="ai-error"><strong>Last error</strong> (' + esc(when(e.Time)) + ', ' + esc(e.Caller) + (e.Purpose ? ', ' + esc(e.Purpose) : '') + '): ' + esc(e.Error || callOutcome(e)) + '</div>'
+              : '';
+            var calls = v.Calls || [];
+            page.querySelector('#Calls').innerHTML = calls.length
+              ? '<table class="ai-calls"><thead><tr><th>Time</th><th>Caller</th><th>Purpose</th><th>Model</th><th>Outcome</th><th>Cost</th><th>Duration</th></tr></thead><tbody>' +
+                calls.map(function (c) {
+                  var tokens = c.InputTokens != null ? c.InputTokens + ' + ' + (c.OutputTokens || 0) + ' tokens' : '';
+                  var title = [tokens, c.SentBytes ? c.SentBytes + ' bytes sent' : '', c.Summary || ''].filter(Boolean).join(' · ');
+                  return '<tr title="' + esc(title) + '"><td>' + esc(when(c.Time)) + '</td><td>' + esc(c.Caller) + '</td><td>' + esc(c.Purpose) + '</td><td>' + esc(c.Model || '') + '</td>' +
+                    '<td>' + esc(callOutcome(c)) + (c.Summary ? '<div class="ai-muted">' + esc(c.Summary) + '</div>' : '') + '</td>' +
+                    '<td class="ai-num">' + esc(callCost(c)) + '</td><td class="ai-num">' + (Number(c.DurationMs) / 1000).toFixed(1) + ' s</td></tr>';
+                }).join('') + '</tbody></table>'
+              : '<p class="ai-muted">' + (v.Enabled ? 'No calls logged yet.' : 'The log is switched off.') + '</p>';
+          }, function () { page.querySelector('#Calls').innerHTML = ''; });
+        }
+
+        page.querySelector('#CallsCaller').addEventListener('change', function (e) { e.stopPropagation(); loadCalls(); });
+        page.querySelector('#CallsRefresh').addEventListener('click', function () { loadCalls(); });
+        // Two clicks: the first asks, the second (within a few seconds) clears
+        page.querySelector('#CallsClear').addEventListener('click', function () {
+          var button = page.querySelector('#CallsClear');
+          if (!clearArmed) {
+            button.querySelector('span').textContent = 'Click again to clear';
+            clearArmed = setTimeout(function () { clearArmed = null; button.querySelector('span').textContent = 'Clear log'; }, 5000);
+            return;
+          }
+          clearTimeout(clearArmed);
+          clearArmed = null;
+          button.querySelector('span').textContent = 'Clear log';
+          ApiClient.ajax({ type: 'DELETE', url: ApiClient.getUrl('Ai/Calls') })
+            .then(function () { say('Call log cleared.'); return loadCalls(); }, function (err) {
+              return failureText(err, "The call log couldn't be cleared.").then(function (why) { say('Not cleared: ' + why); });
+            });
+        });
+
         page.addEventListener('change', refresh);
 
         page.addEventListener('click', function (e) {
@@ -283,7 +372,7 @@
             var result = row.querySelector('.p-result');
             result.textContent = 'Testing…';
             ApiClient.ajax({ type: 'POST', url: ApiClient.getUrl('Ai/Test'), data: JSON.stringify({ Provider: id, Model: row.querySelector('.p-model').value.trim() }), contentType: 'application/json', dataType: 'json' })
-              .then(function (r) { result.textContent = (r.Ok ? '✓ ' : '✗ ') + r.Message; loadSpending(); loadCredit(); }, function () { result.textContent = '✗ The test couldn\'t be run.'; });
+              .then(function (r) { result.textContent = (r.Ok ? '✓ ' : '✗ ') + r.Message; loadSpending(); loadCredit(); loadCalls(); }, function () { result.textContent = '✗ The test couldn\'t be run.'; });
           } else if (e.target.closest('.p-clearkey')) {
             config = fromPage();
             ApiClient.ajax({ type: 'DELETE', url: ApiClient.getUrl('Ai/Keys/' + id) })
@@ -300,6 +389,7 @@
             page.querySelector('#Enabled').checked = c.Enabled;
             page.querySelector('#AllowIngest').checked = c.AllowIngest;
             page.querySelector('#AllowSubtitles').checked = c.AllowSubtitles;
+            page.querySelector('#KeepCallLog').checked = c.KeepCallLog !== false;
             page.querySelector('#OverallMonthlyBudget').value = c.OverallMonthlyBudget;
             page.querySelector('#NoOverallLimit').checked = !!c.NoOverallLimit;
             page.querySelector('#ExtraChargesPercent').value = c.ExtraChargesPercent || 0;
@@ -310,7 +400,7 @@
             page.querySelector('#Currency').innerHTML = currencies.map(function (x) { return '<option value="' + x + '">' + x + '</option>'; }).join('');
             page.querySelector('#Currency').value = currencies.indexOf(c.Currency) >= 0 ? c.Currency : 'USD';
             return loadKeys();
-          }).then(function () { refresh(); Dashboard.hideLoadingMsg(); });
+          }).then(function () { refresh(); loadCalls(); Dashboard.hideLoadingMsg(); });
         });
 
         page.querySelector('#AiConfigForm').addEventListener('submit', function (e) {
@@ -325,7 +415,7 @@
               Dashboard.alert('Not saved: ' + errors.map(function (m) { return m.Message; }).join(' '));
               return;
             }
-            ApiClient.updatePluginConfiguration(pluginId, c).then(function (r) { config = c; Dashboard.processPluginConfigurationUpdateResult(r); loadCredit(); });
+            ApiClient.updatePluginConfiguration(pluginId, c).then(function (r) { config = c; Dashboard.processPluginConfigurationUpdateResult(r); loadCredit(); loadCalls(); });
           });
           return false;
         });
