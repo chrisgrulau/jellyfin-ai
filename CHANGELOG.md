@@ -5,6 +5,13 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Changed
+
+- **FAM-06:** paid calls run through common's shared metered call, so AI and Subtitles reserve, settle and release in
+  the same way. A call that fails unexpectedly (not a provider error, not a cancellation) is now recorded at its
+  estimate, since it may have been billed; before, its reservation was left open and counted at the estimate anyway,
+  until the month ended.
+
 ## [0.2.0-alpha] - 2026-09-26
 
 ### Fixed

@@ -113,7 +113,33 @@ public sealed class BilledFailureTests : IDisposable
         Assert.Equal(0m, spending.Ledger.ThisMonth(Usd(), spending.Rates.Current).Total);
     }
 
-    private sealed class Throws(AiException ex) : IAiModel
+    [Fact]
+    public async Task An_unexpected_failure_is_recorded_at_the_estimate()
+    {
+        // FAM-06: it may have been billed, so it counts at the reservation rather than being released
+        using var spending = new AiSpending(_dir);
+        var metered = new MeteredModel(new Throws(new InvalidOperationException("unexpected")), spending, Usd());
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() => metered.AskAsync(Request(), TestContext.Current.CancellationToken));
+
+        // The estimate: (9 + 2 + 200) chars / 3 + 200 = 270 input tokens and the whole 1,000 output tokens at 4/20 USD per million
+        Assert.Equal(Money.Of(0.02108m, "USD"), metered.LastCost);
+        Assert.Equal(0.02108m, spending.Ledger.ThisMonth(Usd(), spending.Rates.Current).Total);
+    }
+
+    [Fact]
+    public async Task A_cancelled_call_is_released()
+    {
+        using var spending = new AiSpending(_dir);
+        var metered = new MeteredModel(new Throws(new OperationCanceledException()), spending, Usd());
+
+        await Assert.ThrowsAsync<OperationCanceledException>(() => metered.AskAsync(Request(), TestContext.Current.CancellationToken));
+
+        Assert.Null(metered.LastCost);
+        Assert.Equal(0m, spending.Ledger.ThisMonth(Usd(), spending.Rates.Current).Total);
+    }
+
+    private sealed class Throws(Exception ex) : IAiModel
     {
         public string Provider => Configuration.KnownProviders.Anthropic;
 
