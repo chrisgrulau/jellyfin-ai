@@ -5,6 +5,8 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.3.0-alpha] - 2026-09-26
+
 ### Changed
 
 - **FAM-06:** paid calls run through common's shared metered call, so AI and Subtitles reserve, settle and release in
