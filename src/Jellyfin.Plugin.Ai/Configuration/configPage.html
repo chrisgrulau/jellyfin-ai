@@ -14,11 +14,13 @@
       #AiConfigPage .ai-credit { display: flex; gap: .5em 1em; align-items: end; flex-wrap: wrap; }
       #AiConfigPage .ai-credit .inputContainer { flex: 1 1 12em; margin-bottom: 0; }
       #AiConfigPage .ai-muted { opacity: .7; font-size: .9em; }
-      #AiConfigPage .ai-set { color: #4caf50; }
+      #AiConfigPage .ai-set { font-weight: 600; }
+      #AiConfigPage .ai-later { grid-template-columns: minmax(10em, 1fr) 2.8fr; align-items: center; opacity: .75; }
       #AiConfigPage details.ai-advanced { margin-top: 2em; border-top: 1px solid rgba(128,128,128,.25); padding-top: 1em; }
       #AiConfigPage details.ai-advanced > summary { cursor: pointer; font-size: 1.1em; }
-      #AiConfigPage .ai-warning { padding: .75em 1em; border-radius: 4px; margin: .5em 0; background: rgba(255,170,0,.15); }
-      #AiConfigPage .ai-error { padding: .75em 1em; border-radius: 4px; margin: .5em 0; background: rgba(220,50,50,.2); }
+      /* Tinted backgrounds with the theme's own text colour, so they read in the light and dark themes (FAM-07) */
+      #AiConfigPage .ai-warning { padding: .75em 1em; border-radius: 4px; margin: .5em 0; background: rgba(255,170,0,.15); border-left: 4px solid rgba(255,170,0,.8); }
+      #AiConfigPage .ai-error { padding: .75em 1em; border-radius: 4px; margin: .5em 0; background: rgba(220,50,50,.2); border-left: 4px solid rgba(220,50,50,.9); }
       #AiConfigPage .ai-limit { display: grid; grid-template-columns: minmax(10em, 1fr) minmax(12em, 1fr) minmax(8em, .8fr); gap: .5em 1em; align-items: end; padding: .5em 0; }
       @media (max-width: 720px) { #AiConfigPage .ai-provider, #AiConfigPage .ai-limit { grid-template-columns: 1fr; } }
     </style>
@@ -55,6 +57,7 @@
           <h3 class="sectionTitle" style="margin-top:1.5em">Providers</h3>
           <p class="ai-muted">Keys are stored on this server in a file only Jellyfin can read. They are never shown again, logged or included in exports; you can replace or clear them.</p>
           <div id="Providers"></div>
+          <div id="AiStatus" class="ai-muted" role="status" aria-live="polite" style="margin:.5em 0"></div>
 
           <h3 class="sectionTitle" style="margin-top:1.5em">Spending</h3>
           <div class="selectContainer">
@@ -75,7 +78,7 @@
             <div class="fieldDescription checkboxFieldDescription">Not recommended. Each provider's own limit (under Advanced settings) still applies.</div>
           </div>
           <div id="SpendingNow" class="ai-muted" style="margin:.5em 0 1em"></div>
-          <div id="BudgetMessages"></div>
+          <div id="BudgetMessages" aria-live="polite"></div>
 
           <details class="ai-advanced">
             <summary>Advanced settings</summary>
@@ -101,18 +104,33 @@
       (function () {
         var pluginId = '5f260705-cb7c-4fee-8324-b40202261739';
         var page = document.querySelector('#AiConfigPage');
-        // As KnownProviders.All, in order
+        // As KnownProviders.All, in its fixed order; the last value is KnownProviders.IsAvailable. Providers not available
+        // yet are shown as coming later, and whatever was saved for them is sent back unchanged (FAM-08)
         var providers = [
-          ['anthropic', 'Anthropic (Claude)', 'claude-opus-5-5 (recommended)'],
-          ['openai', 'OpenAI', 'Current recommended (automatic)'],
-          ['google', 'Google (Gemini)', 'Current recommended (automatic)'],
-          ['openai-compatible', 'OpenAI-compatible service', 'Model name']
+          ['anthropic', 'Anthropic (Claude)', 'claude-opus-5-5 (recommended)', true],
+          ['openai', 'OpenAI', 'Current recommended (automatic)', false],
+          ['google', 'Google (Gemini)', 'Current recommended (automatic)', false],
+          ['openai-compatible', 'OpenAI-compatible service', 'Model name', false]
         ];
         // The euro plus every currency in the European Central Bank's daily rates (as CurrencyCode.Supported)
         var currencies = ['AUD', 'BGN', 'BRL', 'CAD', 'CHF', 'CNY', 'CZK', 'DKK', 'EUR', 'GBP', 'HKD', 'HUF', 'IDR', 'ILS', 'INR', 'ISK',
           'JPY', 'KRW', 'MXN', 'MYR', 'NOK', 'NZD', 'PHP', 'PLN', 'RON', 'SEK', 'SGD', 'THB', 'TRY', 'USD', 'ZAR'];
         var config = null;
         var checkTimer = null;
+
+        // Announced to screen readers as well as shown (FAM-07)
+        function say(text) { page.querySelector('#AiStatus').textContent = text || ''; }
+
+        // The server's own reason for a failed call: a plain or JSON-quoted string, or a problem's detail or title
+        function failureText(err, fallback) {
+          if (!err || typeof err.text !== 'function') { return Promise.resolve(fallback); }
+          return err.text().then(function (t) {
+            var why = t;
+            try { var j = JSON.parse(t); why = typeof j === 'string' ? j : (j && (j.detail || j.title)) || ''; } catch (e) { /* plain text */ }
+            why = String(why || '').trim();
+            return why || (fallback + (err.status ? ' (HTTP ' + err.status + ')' : ''));
+          }, function () { return fallback; });
+        }
 
         function esc(s) { return String(s == null ? '' : s).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
 
@@ -125,26 +143,33 @@
           page.querySelector('#Providers').innerHTML = providers.map(function (p) {
             var v = providerSettings(p[0]);
             var set = keys && keys[p[0]];
+            var f = 'p-' + p[0] + '-';
+            if (!p[3]) {
+              return '<div class="ai-provider ai-later" data-provider="' + p[0] + '" data-later="1"><div>' + esc(p[1]) + '</div>' +
+                '<div class="ai-muted">Coming later: not available in this version.' + (set || v.Model || v.BaseUrl || v.PrepaidCredit ? ' What you saved for it earlier is kept.' : '') + '</div></div>';
+            }
             return '<div class="ai-provider" data-provider="' + p[0] + '">' +
               '<div class="checkboxContainer"><label class="emby-checkbox-label"><input is="emby-checkbox" type="checkbox" class="p-on"' + (v.Enabled ? ' checked' : '') + ' /><span>' + esc(p[1]) + '</span></label></div>' +
-              '<div class="ai-key"><div class="inputContainer"><label class="inputLabel inputLabelUnfocused">API key: ' + (set ? '<span class="ai-set">set</span>' : 'not set') + '</label>' +
-              '<input is="emby-input" type="password" class="p-key" autocomplete="off" placeholder="' + (set ? 'Enter a new key to replace it' : 'Paste the key') + '" /></div>' +
+              '<div class="ai-key"><div class="inputContainer"><label class="inputLabel inputLabelUnfocused" for="' + f + 'key">API key: ' + (set ? '<span class="ai-set">✓ set</span>' : 'not set') + '</label>' +
+              '<input is="emby-input" type="password" class="p-key" id="' + f + 'key" autocomplete="off" placeholder="' + (set ? 'Enter a new key to replace it' : 'Paste the key') + '" /></div>' +
               '<button is="emby-button" type="button" class="raised p-savekey"><span>Save key</span></button>' +
               (set ? '<button is="emby-button" type="button" class="raised button-alt p-clearkey"><span>Clear</span></button>' : '') +
-              '<button is="emby-button" type="button" class="raised p-test"><span>Test</span></button><div class="p-result ai-muted" style="flex-basis:100%"></div></div>' +
+              '<button is="emby-button" type="button" class="raised p-test"><span>Test</span></button><div class="p-result ai-muted" aria-live="polite" style="flex-basis:100%"></div></div>' +
               '<div>' +
-              '<div class="inputContainer"><label class="inputLabel inputLabelUnfocused">Model</label><input is="emby-input" type="text" class="p-model" value="' + esc(v.Model) + '" placeholder="' + esc(p[2]) + '" /></div>' +
-              (p[0] !== 'openai-compatible' ? '<div class="ai-credit"><div class="inputContainer"><label class="inputLabel inputLabelUnfocused">Prepaid credit (' + esc(v.PrepaidCreditCurrency || 'USD') + ')</label><input is="emby-input" type="number" min="0" step="0.01" class="p-credit" value="' + esc(v.PrepaidCredit || '') + '" placeholder="Not tracked" /></div>' +
-                '<div class="inputContainer"><label class="inputLabel inputLabelUnfocused">Bought or topped up on</label><input is="emby-input" type="date" class="p-credit-date" value="' + esc(v.PrepaidCreditDate || '') + '" /></div>' +
-                '<div class="p-credit-left ai-muted" style="flex-basis:100%"></div></div>' : '') +
-              (p[0] === 'openai-compatible' ? '<div class="inputContainer"><label class="inputLabel inputLabelUnfocused">Address</label><input is="emby-input" type="url" class="p-url" value="' + esc(v.BaseUrl) + '" placeholder="http://localhost:11434/v1" /><div class="fieldDescription">An address on this server or your local network counts as free: it has no spending limit. If it relays to a paid service (for example LiteLLM or an OpenRouter proxy), set a limit in that service.</div></div>' : '') +
+              '<div class="inputContainer"><label class="inputLabel inputLabelUnfocused" for="' + f + 'model">Model</label><input is="emby-input" type="text" class="p-model" id="' + f + 'model" value="' + esc(v.Model) + '" placeholder="' + esc(p[2]) + '" /></div>' +
+              (p[0] === 'openai-compatible' ? '' : '<div class="ai-credit"><div class="inputContainer"><label class="inputLabel inputLabelUnfocused" for="' + f + 'credit">Prepaid credit</label><input is="emby-input" type="number" min="0" step="0.01" class="p-credit" id="' + f + 'credit" value="' + esc(v.PrepaidCredit || '') + '" placeholder="Not tracked" /></div>' +
+                '<div class="selectContainer"><label class="selectLabel" for="' + f + 'credit-cur">Bought in</label><select is="emby-select" class="p-credit-cur" id="' + f + 'credit-cur">' +
+                currencies.map(function (x) { return '<option value="' + x + '"' + (x === (v.PrepaidCreditCurrency || 'USD') ? ' selected' : '') + '>' + x + '</option>'; }).join('') + '</select></div>' +
+                '<div class="inputContainer"><label class="inputLabel inputLabelUnfocused" for="' + f + 'credit-date">Bought or topped up on</label><input is="emby-input" type="date" class="p-credit-date" id="' + f + 'credit-date" value="' + esc(v.PrepaidCreditDate || '') + '" /></div>' +
+                '<div class="p-credit-left ai-muted" style="flex-basis:100%"></div></div>') +
+              (p[0] === 'openai-compatible' ? '<div class="inputContainer"><label class="inputLabel inputLabelUnfocused" for="' + f + 'url">Address</label><input is="emby-input" type="url" class="p-url" id="' + f + 'url" value="' + esc(v.BaseUrl) + '" placeholder="http://localhost:11434/v1" /><div class="fieldDescription">An address on this server or your local network counts as free: it has no spending limit. If it relays to a paid service (for example LiteLLM or an OpenRouter proxy), set a limit in that service.</div></div>' : '') +
               '</div></div>';
-          }).join('') + '<p class="ai-muted">Leave the model empty to use the recommended model (for Claude, Claude Opus 5.5), updated with plugin releases. Naming a model pins it: it may cost more than the recommended one, and the provider may retire it. <strong>Test</strong> sends one tiny request (a fraction of a cent, counted like any other).</p>';
+          }).join('') + '<p class="ai-muted">Leave the model empty to use the recommended model (for Claude, Claude Opus 5.5), updated with plugin releases. Naming a model pins it: it may cost more than the recommended one, and the provider may retire it. <strong>Test</strong> sends one tiny request (a fraction of a cent, counted like any other). A prepaid credit is usually bought in US dollars.</p>';
           renderLimits();
         }
 
         function renderLimits() {
-          page.querySelector('#Limits').innerHTML = providers.filter(function (p) { return p[0] !== 'openai-compatible'; }).map(function (p) {
+          page.querySelector('#Limits').innerHTML = providers.filter(function (p) { return p[3] && p[0] !== 'openai-compatible'; }).map(function (p) {
             var v = providerSettings(p[0]);
             return '<div class="ai-limit" data-limit="' + p[0] + '">' +
               '<div>' + esc(p[1]) + '</div>' +
@@ -168,6 +193,7 @@
           c.ExtraChargesPercent = Math.min(100, Math.max(0, parseFloat(page.querySelector('#ExtraChargesPercent').value) || 0));
           c.Providers = providers.map(function (p) {
             var v = providerSettings(p[0]);
+            if (!p[3]) { return JSON.parse(JSON.stringify(v)); }
             var row = page.querySelector('[data-provider="' + p[0] + '"]');
             var limit = page.querySelector('[data-limit="' + p[0] + '"]');
             return {
@@ -178,7 +204,7 @@
               BudgetMode: limit ? limit.querySelector('.l-mode').value : 'OverallOnly',
               BudgetValue: limit ? Math.max(0, parseFloat(limit.querySelector('.l-value').value) || 0) : 0,
               PrepaidCredit: row.querySelector('.p-credit') ? Math.max(0, parseFloat(row.querySelector('.p-credit').value) || 0) : 0,
-              PrepaidCreditCurrency: v.PrepaidCreditCurrency || 'USD',
+              PrepaidCreditCurrency: row.querySelector('.p-credit-cur') ? row.querySelector('.p-credit-cur').value : (v.PrepaidCreditCurrency || 'USD'),
               PrepaidCreditDate: row.querySelector('.p-credit-date') ? row.querySelector('.p-credit-date').value : ''
             };
           });
@@ -242,10 +268,14 @@
           var id = row.getAttribute('data-provider');
           if (e.target.closest('.p-savekey')) {
             var key = row.querySelector('.p-key').value.trim();
-            if (!key) { Dashboard.alert('Paste the key first.'); return; }
+            if (!key) { say('Paste the key first.'); return; }
             config = fromPage();
+            say('Saving the key…');
             ApiClient.ajax({ type: 'PUT', url: ApiClient.getUrl('Ai/Keys/' + id), data: JSON.stringify({ Key: key }), contentType: 'application/json' })
-              .then(loadKeys, function () { Dashboard.alert("That doesn't look like an API key."); });
+              .then(function () { say('Key saved.'); return loadKeys(); }, function (err) {
+                // The server says why: a malformed key (400), or for example a data folder it can't write (500)
+                return failureText(err, "The key couldn't be saved.").then(function (why) { say('Not saved: ' + why); Dashboard.alert('Not saved: ' + why); });
+              });
           } else if (e.target.closest('.p-test')) {
             var result = row.querySelector('.p-result');
             result.textContent = 'Testing…';
@@ -253,7 +283,10 @@
               .then(function (r) { result.textContent = (r.Ok ? '✓ ' : '✗ ') + r.Message; loadSpending(); loadCredit(); }, function () { result.textContent = '✗ The test couldn\'t be run.'; });
           } else if (e.target.closest('.p-clearkey')) {
             config = fromPage();
-            ApiClient.ajax({ type: 'DELETE', url: ApiClient.getUrl('Ai/Keys/' + id) }).then(loadKeys);
+            ApiClient.ajax({ type: 'DELETE', url: ApiClient.getUrl('Ai/Keys/' + id) })
+              .then(function () { say('Key cleared.'); return loadKeys(); }, function (err) {
+                return failureText(err, "The key couldn't be cleared.").then(function (why) { say('Not cleared: ' + why); });
+              });
           }
         });
 

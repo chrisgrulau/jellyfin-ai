@@ -29,7 +29,7 @@ public class PluginConfiguration : BasePluginConfiguration
     /// </summary>
     public bool AllowSubtitles { get; set; }
 
-    /// <summary>Gets or sets the providers, in order of preference.</summary>
+    /// <summary>Gets or sets the providers: one entry per known provider, in the fixed order of <see cref="KnownProviders.All"/>.</summary>
     [SuppressMessage("Usage", "CA2227:Collection properties should be read only", Justification = "Jellyfin deserializes plugin configuration from JSON, which cannot populate a get-only collection.")]
     public Collection<ProviderSettings> Providers { get; set; } = [];
 

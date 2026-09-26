@@ -216,7 +216,7 @@ public static class AiBridge
             return new(string.Create(CultureInfo.InvariantCulture, $"The request's instructions, data or schema are missing or too large (data {dataBytes:N0} of {MaxData:N0} bytes)."), "bad-request");
         }
 
-        provider = config.Providers.FirstOrDefault(p => p is { Enabled: true } && p.Id == KnownProviders.Anthropic)?.Id;
+        provider = config.Providers.FirstOrDefault(p => p is { Enabled: true } && KnownProviders.IsAvailable(p.Id))?.Id;
         if (provider is null)
         {
             return new("No usable AI provider is switched on (only Anthropic Claude is supported so far).", "not-configured");

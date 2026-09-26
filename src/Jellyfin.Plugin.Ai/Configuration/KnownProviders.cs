@@ -21,8 +21,19 @@ public static class KnownProviders
     /// <summary>Any service with an OpenAI-compatible API: a local server (Ollama …), OpenRouter, Groq ….</summary>
     public const string OpenAiCompatible = "openai-compatible";
 
-    /// <summary>Gets every known provider id, in the default order of preference.</summary>
+    /// <summary>
+    /// Gets every known provider id, in the fixed order the settings keep and show them. The order isn't a preference:
+    /// each request uses the one provider that can answer it.
+    /// </summary>
     public static IReadOnlyList<string> All { get; } = [Anthropic, OpenAi, Google, OpenAiCompatible];
+
+    /// <summary>
+    /// Whether a provider can be used in this version. The others can't be set up yet (the settings page shows them as
+    /// coming later) and are left out of the spending checks; whatever was saved for them is kept.
+    /// </summary>
+    /// <param name="id">Provider id.</param>
+    /// <returns><c>true</c> if calls to it are made.</returns>
+    public static bool IsAvailable(string? id) => string.Equals(id, Anthropic, StringComparison.Ordinal);
 
     /// <summary>
     /// Whether an id is a known provider.
