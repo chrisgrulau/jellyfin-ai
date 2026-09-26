@@ -5,6 +5,13 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Changed
+
+- Shared code updated (COM-03, COM-04, COM-05). Whether an OpenAI-compatible service is local (and so free, outside
+  every budget) now uses the one shared definition. That definition also counts link-local addresses (169.254.x.x) and
+  bracketed IPv6. The settings page now says that a local address counts as free, and that a local relay to a paid
+  service needs its own limit.
+
 ### Added
 - Repository scaffolding: README, design notes, security and contribution policies, CI with locked restores, pinned
   SDK, release job (SHA256SUMS, build-provenance attestation, draft then publish), Dependabot (NuGet, Actions, SDK and
