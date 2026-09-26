@@ -5,6 +5,8 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.4.0-alpha] - 2026-09-27
+
 ### Added
 
 - **FEAT-04:** a log of AI calls on the settings page: time, plugin, purpose, model, outcome (answered, refused by the
