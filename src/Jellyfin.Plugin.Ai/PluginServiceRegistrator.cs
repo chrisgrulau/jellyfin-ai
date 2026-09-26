@@ -17,6 +17,10 @@ public class PluginServiceRegistrator : IPluginServiceRegistrator
     {
         // API keys live in their own owner-only file in the plugin's data folder, never in the plugin configuration
         // (which the settings page reads back)
+        // Spending on AI providers: published prices, the month's ledger and exchange rates
+        serviceCollection.AddSingleton(sp => new Pricing.AiSpending(
+            Path.Combine(sp.GetRequiredService<IApplicationPaths>().PluginsPath, typeof(AiPlugin).Assembly.GetName().Name!)));
+
         serviceCollection.AddSingleton(sp => new ApiKeyStore(
             Path.Combine(sp.GetRequiredService<IApplicationPaths>().PluginsPath, typeof(AiPlugin).Assembly.GetName().Name!, "keys.json")));
     }

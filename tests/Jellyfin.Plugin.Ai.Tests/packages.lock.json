@@ -21,6 +21,14 @@
           "xunit.v3.mtp-v2": "[4.0.1]"
         }
       },
+      "Anthropic": {
+        "type": "Transitive",
+        "resolved": "12.50.0",
+        "contentHash": "BBtKetn0gsVeaFfRHcqW5hhUwWdNuIp4lTCvrd4roN6HivnJqrKBbEhPWjA/a5eypg2rvGdUr/Z5qzV6Fr7+Bg==",
+        "dependencies": {
+          "Microsoft.Extensions.AI.Abstractions": "10.5.1"
+        }
+      },
       "Diacritics": {
         "type": "Transitive",
         "resolved": "4.1.8",
@@ -153,6 +161,11 @@
           "Microsoft.Extensions.Configuration.Abstractions": "10.0.11",
           "Microsoft.Extensions.Logging": "10.0.11"
         }
+      },
+      "Microsoft.Extensions.AI.Abstractions": {
+        "type": "Transitive",
+        "resolved": "10.5.1",
+        "contentHash": "nB0l3IlsVbNeUxsE7nZNb9GY8rP1OSeqpj0pseORPejt474HNKEauTWTLdSJPkSvPlRMxowZNMo6nyp7APAiSg=="
       },
       "Microsoft.Extensions.Caching.Abstractions": {
         "type": "Transitive",
@@ -374,6 +387,7 @@
       "jellyfin.plugin.ai": {
         "type": "Project",
         "dependencies": {
+          "Anthropic": "[12.50.0, )",
           "Jellyfin.Controller": "[12.1.0, )",
           "Jellyfin.Model": "[12.1.0, )"
         }

@@ -1,0 +1,14 @@
+{
+  "version": "2026-09-26",
+  "note": "List prices per million tokens from each provider's pricing page on the version date. Used to estimate and record what a call costs; a model without a price here isn't used for paid calls. Thinking tokens are billed as output.",
+  "prices": [
+    { "provider": "anthropic", "model": "claude-opus-5-5", "unit": "input-mtok", "amount": "4", "currency": "USD" },
+    { "provider": "anthropic", "model": "claude-opus-5-5", "unit": "output-mtok", "amount": "20", "currency": "USD" },
+    { "provider": "anthropic", "model": "claude-opus-5", "unit": "input-mtok", "amount": "5", "currency": "USD" },
+    { "provider": "anthropic", "model": "claude-opus-5", "unit": "output-mtok", "amount": "25", "currency": "USD" },
+    { "provider": "anthropic", "model": "claude-sonnet-5", "unit": "input-mtok", "amount": "2", "currency": "USD" },
+    { "provider": "anthropic", "model": "claude-sonnet-5", "unit": "output-mtok", "amount": "10", "currency": "USD" },
+    { "provider": "anthropic", "model": "claude-haiku-4-5", "unit": "input-mtok", "amount": "1", "currency": "USD" },
+    { "provider": "anthropic", "model": "claude-haiku-4-5", "unit": "output-mtok", "amount": "5", "currency": "USD" }
+  ]
+}
