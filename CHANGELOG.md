@@ -5,6 +5,8 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.1.0-alpha] - 2026-09-26
+
 ### Added
 
 - **Entry point for the other plugins** (`AiBridge.AskAsync`). Ingest and Subtitles call it in the same server
@@ -37,7 +39,10 @@ All notable changes to this project are documented here. The format follows
   bracketed IPv6. The settings page now says that a local address counts as free, and that a local relay to a paid
   service needs its own limit.
 
+## 0.0.1 - scaffolding (not released)
+
 ### Added
+
 - Repository scaffolding: README, design notes, security and contribution policies, CI with locked restores, pinned
   SDK, release job (SHA256SUMS, build-provenance attestation, draft then publish), Dependabot (NuGet, Actions, SDK and
   the common submodule), CODEOWNERS.

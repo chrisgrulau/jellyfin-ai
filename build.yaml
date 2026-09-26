@@ -1,7 +1,7 @@
 # Plugin metadata for Jellyfin Plugin Repository Manager (JPRM) packaging
 name: "Shoal AI"
 guid: "5f260705-cb7c-4fee-8324-b40202261739"
-version: "0.0.1.0"
+version: "0.1.0.0"
 targetAbi: "12.1.0.0"
 framework: "net10.0"
 owner: "chrisgrulau"
@@ -16,4 +16,6 @@ artifacts:
   - "Anthropic.dll"
   - "Microsoft.Extensions.AI.Abstractions.dll"
 changelog: >
-  Initial scaffolding.
+  First release. Claude through the official SDK (default Claude Opus 5.5), metered against overall and per-provider
+  monthly limits in your currency; a Claude prepaid-credit countdown; an in-process entry point so Ingest and
+  Subtitles can ask for help, each only when allowed on this page and only for its own purposes.
