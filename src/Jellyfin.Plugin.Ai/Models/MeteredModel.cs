@@ -61,7 +61,7 @@ public sealed class MeteredModel : IAiModel
 
             // Refused or never answered: not charged. Anything else may have been billed, so it counts at the estimate
             IsUncharged = static ex => ex is AiException or OperationCanceledException,
-            Refuse = static why => new AiException(why) { Failure = FailureClass.ProviderLimit },
+            Refuse = static why => new AiException(why) { Failure = FailureClass.ProviderLimit, RefusedByLimits = true },
             Recorded = cost => LastCost = cost,
         };
 

@@ -48,6 +48,12 @@ public class PluginConfiguration : BasePluginConfiguration
     /// </summary>
     public bool NoOverallLimit { get; set; }
 
+    /// <summary>
+    /// Gets or sets a value indicating whether AI calls are logged for the settings page (time, caller, purpose, model,
+    /// outcome, tokens, cost; never what was sent). On by default.
+    /// </summary>
+    public bool KeepCallLog { get; set; } = true;
+
     // ---- Advanced ----
 
     /// <summary>Gets or sets a percentage added to provider charges for taxes (such as GST) or card fees; 0 to 100.</summary>

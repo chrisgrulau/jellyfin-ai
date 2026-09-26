@@ -10,6 +10,7 @@ using System.Text.Json.Nodes;
 using System.Threading;
 using System.Text.Unicode;
 using System.Threading.Tasks;
+using Jellyfin.Plugin.Ai.Calls;
 using Jellyfin.Plugin.Ai.Configuration;
 using Jellyfin.Plugin.Ai.Keys;
 using Jellyfin.Plugin.Ai.Models;
@@ -63,6 +64,7 @@ public static class AiBridge
     private static ApiKeyStore? _keys;
     private static AiSpending? _spending;
     private static IHttpClientFactory? _http;
+    private static CallLog? _log;
 
     /// <summary>
     /// Answers a request from another plugin.
@@ -77,10 +79,45 @@ public static class AiBridge
             return Failed("The AI plugin isn't ready yet.", "transient");
         }
 
+        return await AnswerAsync(requestJson, config, _keys, _spending, _log, null, cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Answers a request with the given settings and services (the entry point's work, testable without the plugin).
+    /// </summary>
+    /// <param name="requestJson">The request.</param>
+    /// <param name="config">The settings.</param>
+    /// <param name="keys">The key store.</param>
+    /// <param name="spending">Prices, ledger and rates.</param>
+    /// <param name="log">The call log, if any.</param>
+    /// <param name="models">Builds the model (for tests), or <c>null</c> for <see cref="AiModels.Create"/>.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>The reply, as JSON.</returns>
+    internal static async Task<string> AnswerAsync(
+        string requestJson,
+        PluginConfiguration config,
+        ApiKeyStore keys,
+        AiSpending spending,
+        CallLog? log,
+        Func<string, (IAiModel? Model, string? Problem)>? models,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(config);
+        ArgumentNullException.ThrowIfNull(keys);
+        ArgumentNullException.ThrowIfNull(spending);
         if (Parse(requestJson, config, out var request, out var provider) is { } problem)
         {
+            // Switched off or not allowed is the administrator's choice, not an error, and nothing was sent: not logged
+            if (log is not null && problem.Failure != "off")
+            {
+                var (caller, purpose) = CallerOf(requestJson);
+                log.RecordProblem(Context(caller, config, keys, spending, provider), purpose, provider, Encoding.UTF8.GetByteCount(requestJson ?? string.Empty), problem.Message, problem.Failure);
+            }
+
             return Failed(problem.Message, problem.Failure);
         }
+
+        var context = Context(request!.Purpose[..request.Purpose.IndexOf('.', StringComparison.Ordinal)], config, keys, spending, provider);
 
         // Exchange rates are needed to price the call in the user's currency: the shared store refreshes them about once
         // a day, and at most every 30 minutes while they are missing or stale (AI-02, FAM-06). It never throws for network
@@ -88,18 +125,22 @@ public static class AiBridge
         if (_http is not null)
         {
             using var http = _http.CreateClient();
-            await _spending.Store.CurrentRatesAsync(http, cancellationToken).ConfigureAwait(false);
+            await spending.Store.CurrentRatesAsync(http, cancellationToken).ConfigureAwait(false);
+            context = context with { Rates = spending.Rates.Current };
         }
 
-        var (model, why) = AiModels.Create(config, provider!, null, _keys, _spending);
+        var (model, why) = models is not null ? models(provider!) : AiModels.Create(config, provider!, null, keys, spending);
         if (model is null)
         {
+            log?.RecordProblem(context, request.Purpose, provider, 0, why ?? "No AI provider can be used.", "not-configured");
             return Failed(why ?? "No AI provider can be used.", "not-configured");
         }
 
         try
         {
-            var answer = await model.AskAsync(request!, cancellationToken).ConfigureAwait(false);
+            var answer = log is null
+                ? await model.AskAsync(request, cancellationToken).ConfigureAwait(false)
+                : await log.AskAsync(model, request, context, cancellationToken).ConfigureAwait(false);
             return Answered(answer.Json, answer.Model);
         }
         catch (AiException ex)
@@ -124,11 +165,55 @@ public static class AiBridge
     /// <param name="keys">The key store.</param>
     /// <param name="spending">Prices, ledger and rates.</param>
     /// <param name="http">HTTP clients (for exchange rates), if available.</param>
-    internal static void Attach(ApiKeyStore keys, AiSpending spending, IHttpClientFactory? http = null)
+    /// <param name="log">The call log, if any.</param>
+    internal static void Attach(ApiKeyStore keys, AiSpending spending, IHttpClientFactory? http = null, CallLog? log = null)
     {
         _keys = keys;
         _spending = spending;
         _http = http;
+        _log = log;
+    }
+
+    /// <summary>
+    /// What a call is recorded with: the caller, whether to log, the limits, rates and the key to redact.
+    /// </summary>
+    /// <param name="caller">Who asked.</param>
+    /// <param name="config">The settings.</param>
+    /// <param name="keys">The key store.</param>
+    /// <param name="spending">Prices, ledger and rates.</param>
+    /// <param name="provider">The provider, if chosen.</param>
+    /// <returns>The context.</returns>
+    internal static CallContext Context(string? caller, PluginConfiguration config, ApiKeyStore keys, AiSpending spending, string? provider)
+    {
+        ArgumentNullException.ThrowIfNull(config);
+        ArgumentNullException.ThrowIfNull(keys);
+        ArgumentNullException.ThrowIfNull(spending);
+        return new(
+            CallLog.CallerName(caller),
+            config.KeepCallLog,
+            AiSpending.LimitsOf(config),
+            spending.Rates.Current,
+            KnownProviders.All.Select(keys.Get).Where(k => k is not null).ToList());
+    }
+
+    // The caller and purpose of a request that couldn't be read in full, for the log (never its other fields)
+    private static (string? Caller, string? Purpose) CallerOf(string? json)
+    {
+        try
+        {
+            if (!string.IsNullOrEmpty(json) && json.Length <= MaxInstructions + MaxData + MaxSchema + 4096 && JsonNode.Parse(json) is JsonObject root)
+            {
+                TryString(root["caller"], out var caller);
+                TryString(root["purpose"], out var purpose);
+                return (caller, purpose);
+            }
+        }
+        catch (JsonException)
+        {
+            // Not JSON: logged as from "other"
+        }
+
+        return (null, null);
     }
 
     /// <summary>
@@ -272,7 +357,12 @@ public static class AiBridge
     /// <c>not-configured</c> (no usable provider or key), <c>unsupported-version</c> or <c>bad-request</c>.</param>
     internal sealed record Problem(string Message, string Failure);
 
-    private static string Name(FailureClass failure) => failure switch
+    /// <summary>
+    /// The failure name a caller is told for a failure class.
+    /// </summary>
+    /// <param name="failure">The failure class.</param>
+    /// <returns>The name.</returns>
+    internal static string Name(FailureClass failure) => failure switch
     {
         FailureClass.Authentication => "authentication",
         FailureClass.ProviderLimit => "provider-limit",
@@ -305,16 +395,28 @@ public static class AiBridge
 /// </summary>
 internal sealed class AiBridgeHost : Microsoft.Extensions.Hosting.IHostedService
 {
+    private readonly CallLog _log;
+
     /// <summary>
     /// Initializes a new instance of the <see cref="AiBridgeHost"/> class.
     /// </summary>
     /// <param name="keys">The key store.</param>
     /// <param name="spending">Prices, ledger and rates.</param>
     /// <param name="http">HTTP clients.</param>
-    public AiBridgeHost(ApiKeyStore keys, AiSpending spending, IHttpClientFactory http) => AiBridge.Attach(keys, spending, http);
+    /// <param name="log">The call log.</param>
+    public AiBridgeHost(ApiKeyStore keys, AiSpending spending, IHttpClientFactory http, CallLog log)
+    {
+        _log = log;
+        AiBridge.Attach(keys, spending, http, log);
+    }
 
     /// <inheritdoc />
-    public Task StartAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+    public Task StartAsync(CancellationToken cancellationToken)
+    {
+        // Old calls are trimmed when the server starts, then once a day as calls are recorded
+        _log.Trim();
+        return Task.CompletedTask;
+    }
 
     /// <inheritdoc />
     public Task StopAsync(CancellationToken cancellationToken) => Task.CompletedTask;

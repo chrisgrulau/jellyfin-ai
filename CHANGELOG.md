@@ -5,6 +5,15 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- **FEAT-04:** a log of AI calls on the settings page: time, plugin, purpose, model, outcome (answered, refused by the
+  spending limits, or failed and why), tokens, cost in the provider's currency and yours, and duration, filterable by
+  plugin, with the last error shown while nothing has succeeded since. Never what was sent (only its size) or the
+  answer's text; error messages have keys removed and are cut to 300 characters. Kept in `calls.jsonl` in the plugin's
+  data folder, readable only by Jellyfin, for the last 1,000 calls or 30 days. **Keep a log of AI calls** (on by
+  default) and a two-click **Clear log**; `GET`/`DELETE Ai/Calls`.
+
 ## [0.3.0-alpha] - 2026-09-26
 
 ### Changed

@@ -66,6 +66,31 @@ retired by the provider.
   `subtitles`), `purpose` (must start with the caller), `instructions`, `data`, `schema`, `maxOutputTokens` (256–16000),
   `effort` (`low`/`medium`/`high`); reply: `ok` with `answer` and `model`, or `error` with a `failure` class.
 
+## Call log (FEAT-04)
+
+Every attempt through the entry point or the **Test** button is recorded by `Calls.CallLog`, unless **Keep a log of AI
+calls** is off. Requests refused because a plugin is switched off or not allowed aren't: that is the administrator's
+choice and nothing was sent.
+
+- **Kept:** time (UTC), caller (`ingest`, `subtitles`, `test`, anything else as `other`), purpose, provider, model,
+  outcome (`answered`, `refused` by the spending limits, or `failed` with its failure class: the bridge's names plus
+  `spending-limit` and `cancelled`), tokens billed (also for a billed failure), the cost recorded on the ledger in the
+  provider's currency and converted to the settings' currency (with the extra percentage) when rates are current,
+  duration, the size in UTF-8 bytes of the instructions, data and schema, and either the answer's shape (field names,
+  numbers and booleans; strings and lists by length only) or the error message.
+- **Never kept:** the instructions, data or schema, the answer's text, or keys. Error messages go through common's
+  `Redaction` with the keys in use and are cut to 300 characters; an unexpected exception keeps only its type name.
+  Purposes, providers, models and field names keep identifier characters only.
+- **Storage:** JSON Lines (`calls.jsonl`) in the plugin's data folder. Each call is appended; the file is created
+  owner-only through common's `JsonFile.WriteAtomic(ownerOnly: true)` and then truncated, which keeps its permissions.
+  It is trimmed to the last 1,000 calls, none older than 30 days, and three quarters of 1 MB at start-up, once a day,
+  after 100 calls past the limit, or past 1 MB: a new owner-only file is written, flushed and renamed over the old one.
+  A damaged line (a crash mid-append) is skipped when read and dropped at the next trim. A file that can't be read is
+  never overwritten. Recording never fails a call.
+- **API:** `GET Ai/Calls?limit=&caller=` (administrators) returns the calls newest first (in the order they finished),
+  whether logging is on, and the last error: the newest call, if it wasn't answered. `DELETE Ai/Calls` empties the log
+  (the page asks for a second click).
+
 ## Failures
 
 Shared failure classes and back-off from jellyfin-plugin-common: no connection (wait and probe, alert now), transient
