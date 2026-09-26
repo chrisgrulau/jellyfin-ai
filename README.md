@@ -16,6 +16,23 @@ candidate titles a release is, or whether a subtitle really matches the dialogue
 > **Status:** alpha. Claude calls within the spending limits, a prepaid-credit countdown and the entry point the other
 > plugins use are in place. OpenAI, Google and OpenAI-compatible providers can be set up but aren't used yet.
 
+## Installing
+
+**From the Shoal plugin repository (recommended):** in **Dashboard → Plugins → Repositories**, add
+`https://raw.githubusercontent.com/chrisgrulau/jellyfin-shoal/main/manifest.json`, install **Shoal AI** from the
+catalogue and restart Jellyfin. Updates install automatically unless you switch that off for the plugin under **My
+Plugins**.
+
+**By hand:** download `jellyfin-plugin-ai.zip` from the [releases](../../releases), check it against `SHA256SUMS` (and,
+if you like, `gh attestation verify jellyfin-plugin-ai.zip --repo chrisgrulau/jellyfin-ai`), and put **all three DLLs**
+it contains (`Jellyfin.Plugin.Ai.dll`, `Anthropic.dll`, `Microsoft.Extensions.AI.Abstractions.dll`) in
+`<jellyfin data>/plugins/AI_<version>/`, then restart Jellyfin.
+
+Then open **Dashboard → Plugins → Shoal AI**: add a Claude API key, press **Test**, and allow Ingest and Subtitles to use
+it. Nothing is sent anywhere until you do.
+
+Uninstalling leaves the plugin's data folder (`keys.json`, `spend.json`, `rates.json`); delete it by hand if you like.
+
 ## How it fits together
 
 - **Optional everywhere.** Ingest and Subtitles work fully without this plugin. When it is installed, and you allow
