@@ -5,6 +5,8 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.2.0-alpha] - 2026-09-26
+
 ### Fixed
 
 - **FAM-02:** text in any script is passed to the model as it is, not as `\uXXXX` escapes. The data limit (64 KB) is
