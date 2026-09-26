@@ -23,5 +23,8 @@ public class PluginServiceRegistrator : IPluginServiceRegistrator
 
         serviceCollection.AddSingleton(sp => new ApiKeyStore(
             Path.Combine(sp.GetRequiredService<IApplicationPaths>().PluginsPath, typeof(AiPlugin).Assembly.GetName().Name!, "keys.json")));
+
+        // The entry point the other plugins use (in-process, JSON in and out)
+        serviceCollection.AddHostedService<Bridge.AiBridgeHost>();
     }
 }

@@ -7,6 +7,13 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- **Entry point for the other plugins** (`AiBridge.AskAsync`). Ingest and Subtitles call it in the same server
+  process with versioned JSON, so the plugins never share C# types, and there is no HTTP endpoint for it.
+  - Each request is checked: the version, its size, that the calling plugin is allowed on this plugin's settings page,
+    and that its purpose belongs to it.
+  - Spending is metered like any other call.
+  - Replies say what failed (not allowed, authentication, provider limit, transient, bad request, no connection), so
+    callers can fall back to review.
 - **Claude calls.** The plugin can now ask Claude (Anthropic), through the official Anthropic SDK. It uses Claude Opus
   5.5 unless you name another model.
   - Answers are constrained to a JSON schema.
