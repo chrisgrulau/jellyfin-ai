@@ -10,7 +10,9 @@ namespace Jellyfin.Plugin.Ai.Models;
 /// <summary>
 /// A paid model kept within the spending limits: each call's most it could cost (input plus the whole output
 /// allowance) is reserved before it is made, and what it actually cost (from the reply's token counts) is recorded
-/// afterwards, also when a billed reply turns out unusable; a call that was never answered is released. Unknown prices or exchange rates, or going over a limit, mean no call.
+/// afterwards, also when a billed reply turns out unusable; a call that was never answered is released, and one that
+/// failed unexpectedly is recorded at the estimate (it may have been billed). Unknown prices or exchange rates, or going
+/// over a limit, mean no call.
 /// </summary>
 public sealed class MeteredModel : IAiModel
 {
@@ -49,39 +51,35 @@ public sealed class MeteredModel : IAiModel
             throw new AiException("There's no published price for " + Model + ", so it isn't used.") { Failure = FailureClass.BadRequest };
         }
 
-        var decision = _spending.Ledger.TryReserve(Provider, request.Purpose, estimate, _limits, _spending.Rates.Current);
-        if (decision.ReservationId is not { } reservation)
-        {
-            throw new AiException(decision.Refusal ?? "Not allowed by the spending limits.") { Failure = FailureClass.ProviderLimit };
-        }
-
-        try
-        {
-            var answer = await _inner.AskAsync(request, cancellationToken).ConfigureAwait(false);
-            LastCost = Settle(reservation, estimate, answer.Model, answer.InputTokens, answer.OutputTokens);
-            return answer;
-        }
-        catch (AiException ex) when (ex.Charged)
+        // The shared metered call reserves, runs, then settles or releases (FAM-06). AiException is public, so it can't
+        // derive from common's internal ProviderException: its billed failures are recognised here instead.
+        var options = new MeteredCallOptions
         {
             // Answered and billed, but unusable (a refusal, cut off, unreadable): recorded at what it used (AI-04)
-            LastCost = Settle(reservation, estimate, ex.ChargedModel, ex.InputTokens, ex.OutputTokens);
-            throw;
-        }
-        catch (Exception ex) when (ex is AiException or OperationCanceledException)
-        {
-            // Refused or never answered: not charged
-            _spending.Ledger.Release(reservation);
-            throw;
-        }
+            IsCharged = static ex => ex is AiException { Charged: true },
+            ChargedCost = ex => ex is AiException a ? CostOf(a.ChargedModel, a.InputTokens, a.OutputTokens) : null,
+
+            // Refused or never answered: not charged. Anything else may have been billed, so it counts at the estimate
+            IsUncharged = static ex => ex is AiException or OperationCanceledException,
+            Refuse = static why => new AiException(why) { Failure = FailureClass.ProviderLimit },
+            Recorded = cost => LastCost = cost,
+        };
+
+        return await MeteredCall.RunAsync(
+            _spending.Ledger,
+            _limits,
+            _spending.Rates.Current,
+            Provider,
+            request.Purpose,
+            estimate,
+            ct => _inner.AskAsync(request, ct),
+            answer => CostOf(answer.Model, answer.InputTokens, answer.OutputTokens),
+            options,
+            cancellationToken).ConfigureAwait(false);
     }
 
-    // Records a billed call at its actual cost: the answering model's price, else the requested model's, else the estimate
-    private Money Settle(Guid reservation, Money estimate, string? model, long inputTokens, long outputTokens)
-    {
-        var actual = (model is null ? null : _spending.Cost(Provider, model, inputTokens, outputTokens))
-            ?? _spending.Cost(Provider, Model, inputTokens, outputTokens)
-            ?? estimate;
-        _spending.Ledger.Settle(reservation, actual);
-        return actual;
-    }
+    // A billed call's actual cost: the answering model's price, else the requested model's (else the estimate, in MeteredCall)
+    private Money? CostOf(string? model, long inputTokens, long outputTokens)
+        => (model is null ? null : _spending.Cost(Provider, model, inputTokens, outputTokens))
+            ?? _spending.Cost(Provider, Model, inputTokens, outputTokens);
 }

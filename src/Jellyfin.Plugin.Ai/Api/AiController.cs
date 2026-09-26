@@ -161,7 +161,8 @@ public class AiController : ControllerBase
             month.PerProvider.ToDictionary(p => p.Key, p => decimal.Round(p.Value, 4), StringComparer.OrdinalIgnoreCase),
             rates?.Date.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
             rates is not null && rates.IsFresh(DateOnly.FromDateTime(DateTime.Now)),
-            _spending.Prices?.Version);
+            _spending.Prices?.Version,
+            Pricing.AiSpending.Currencies);
     }
 
     /// <summary>
@@ -241,4 +242,5 @@ public sealed record TestResult(bool Ok, string Message);
 /// <param name="RatesDate">The date of the exchange rates in use, if any.</param>
 /// <param name="RatesFresh">Whether those rates are recent enough to use.</param>
 /// <param name="PricesVersion">The version of the published prices shipped with the plugin.</param>
-public sealed record SpendingSummary(string Currency, decimal? Limit, decimal? Spent, IReadOnlyDictionary<string, decimal> PerProvider, string? RatesDate, bool RatesFresh, string? PricesVersion);
+/// <param name="Currencies">The currencies that can be chosen (so the settings page doesn't copy the list).</param>
+public sealed record SpendingSummary(string Currency, decimal? Limit, decimal? Spent, IReadOnlyDictionary<string, decimal> PerProvider, string? RatesDate, bool RatesFresh, string? PricesVersion, IReadOnlyList<string> Currencies);
