@@ -391,7 +391,7 @@ public static class AiBridge
 }
 
 /// <summary>
-/// Connects <see cref="AiBridge"/> to the plugin's services when the server starts.
+/// Connects <see cref="AiBridge"/> and <see cref="SpendingBridge"/> to the plugin's services when the server starts.
 /// </summary>
 internal sealed class AiBridgeHost : Microsoft.Extensions.Hosting.IHostedService
 {
@@ -408,6 +408,7 @@ internal sealed class AiBridgeHost : Microsoft.Extensions.Hosting.IHostedService
     {
         _log = log;
         AiBridge.Attach(keys, spending, http, log);
+        SpendingBridge.Attach(spending, http);
     }
 
     /// <inheritdoc />

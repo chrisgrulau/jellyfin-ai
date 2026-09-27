@@ -21,6 +21,18 @@ public static class KnownProviders
     /// <summary>Any service with an OpenAI-compatible API: a local server (Ollama …), OpenRouter, Groq ….</summary>
     public const string OpenAiCompatible = "openai-compatible";
 
+    /// <summary>Deepgram speech-to-text, used by Shoal Subtitles (its key stays there); only its spending limit is set here.</summary>
+    public const string Deepgram = Common.Costs.SpendingBridgeClient.Deepgram;
+
+    /// <summary>OpenAI speech-to-text, used by Shoal Subtitles (its key stays there); only its spending limit is set here.</summary>
+    public const string OpenAiSpeech = Common.Costs.SpendingBridgeClient.OpenAiSpeech;
+
+    /// <summary>
+    /// Gets the speech-to-text providers whose spending this plugin's budget keeps for Shoal Subtitles (see the spending
+    /// entry point): they have a limit here, but no key, model or test.
+    /// </summary>
+    public static IReadOnlyList<string> Speech { get; } = [Deepgram, OpenAiSpeech];
+
     /// <summary>
     /// Gets every known provider id, in the fixed order the settings keep and show them. The order isn't a preference:
     /// each request uses the one provider that can answer it.
@@ -41,6 +53,13 @@ public static class KnownProviders
     /// <param name="id">Provider id.</param>
     /// <returns><c>true</c> if known.</returns>
     public static bool IsKnown(string? id) => id is not null && All.Contains(id, StringComparer.Ordinal);
+
+    /// <summary>
+    /// Whether an id is a speech-to-text provider this plugin's budget keeps (see <see cref="Speech"/>).
+    /// </summary>
+    /// <param name="id">Provider id.</param>
+    /// <returns><c>true</c> if it is.</returns>
+    public static bool IsSpeech(string? id) => id is not null && Speech.Contains(id, StringComparer.Ordinal);
 
     /// <summary>
     /// The default settings for a provider: Anthropic is allowed (it still needs a key), the others are off.

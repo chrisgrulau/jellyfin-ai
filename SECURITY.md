@@ -30,3 +30,8 @@ are constrained by JSON schemas.
 Other plugins will call this one through a versioned JSON-in/JSON-out entry point inside the server, identified by plugin
 id, with size limits. There is no public HTTP endpoint for model calls; the HTTP endpoints are for the settings page and
 require an administrator.
+
+The spending entry point (`SpendingBridge`) exchanges only amounts, provider names and purposes with Shoal Subtitles:
+never audio, text or keys. Requests are at most 4 KB, every field is checked by type, amounts must be 0 to 100,000 in
+a supported currency, only Subtitles is accepted (and only while **Allow Subtitles to use this budget** is ticked),
+and a reservation can only be settled or released by the plugin that made it.

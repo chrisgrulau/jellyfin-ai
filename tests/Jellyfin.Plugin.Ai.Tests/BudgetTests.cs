@@ -30,7 +30,7 @@ public class BudgetTests
     {
         var c = Config(overall: PluginConfiguration.DefaultOverallMonthly);
 
-        Assert.Equal(KnownProviders.All, c.Providers.Select(p => p.Id));
+        Assert.Equal(KnownProviders.All.Concat(KnownProviders.Speech), c.Providers.Select(p => p.Id));
         Assert.Equal([KnownProviders.Anthropic], c.Providers.Where(p => p.Enabled).Select(p => p.Id));
         Assert.Empty(BudgetRules.Check(c));
         Assert.False(c.AllowIngest);
@@ -50,7 +50,7 @@ public class BudgetTests
         Assert.Equal("USD", c.Currency);
         Assert.Equal(0, c.OverallMonthlyBudget);
         Assert.Equal(100, c.ExtraChargesPercent);
-        Assert.Equal(KnownProviders.All, c.Providers.Select(p => p.Id));
+        Assert.Equal(KnownProviders.All.Concat(KnownProviders.Speech), c.Providers.Select(p => p.Id));
         var openAi = c.Providers.Single(p => p.Id == KnownProviders.OpenAi);
         Assert.True(openAi.Enabled);
         Assert.Equal(100, openAi.BudgetValue);

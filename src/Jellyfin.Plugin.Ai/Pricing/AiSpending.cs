@@ -60,7 +60,8 @@ public sealed class AiSpending : IDisposable
         ArgumentNullException.ThrowIfNull(config);
         decimal? overall = config.NoOverallLimit ? null : Math.Max(0, config.OverallMonthlyBudget);
         var per = new Dictionary<string, decimal>(StringComparer.OrdinalIgnoreCase);
-        foreach (var p in config.Providers.Where(p => p is { Enabled: true }))
+        // Speech-to-text providers (used by Subtitles through the spending entry point) have no on/off switch here
+        foreach (var p in config.Providers.Where(p => p is { Enabled: true } || KnownProviders.IsSpeech(p?.Id)))
         {
             if (BudgetRules.ProviderLimit(p, overall) is { } limit)
             {

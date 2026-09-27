@@ -138,10 +138,17 @@
                 <span>No overall limit (not recommended)</span>
               </label>
             </div>
+            <div class="checkboxContainer">
+              <label class="emby-checkbox-label">
+                <input id="AllowSubtitlesSpending" type="checkbox" is="emby-checkbox" />
+                <span>Allow Subtitles to use this budget for paid speech-to-text</span>
+              </label>
+            </div>
             <details class="ai-help">
               <summary>How limits and currencies work</summary>
               <div>
                 <p>0 means no paid providers at all. A provider stops at whichever limit it reaches first: the overall limit, its own limit below, or the one you set with the provider.</p>
+                <p>With "Allow Subtitles to use this budget" ticked (the default), Shoal Subtitles' paid speech-to-text (Deepgram, OpenAI) counts here too and has its own limit below; its keys stay in Subtitles, and only amounts are exchanged. Untick it and Subtitles uses its own currency and limit again.</p>
                 <p>Providers usually charge in US dollars; charges are converted with the European Central Bank's daily rates, and paid calls pause rather than guess if current rates aren't available.</p>
                 <p id="SpendingSources"></p>
               </div>
@@ -150,7 +157,7 @@
 
             <details class="ai-sub" id="SpendingProviders">
               <summary>Limit per provider</summary>
-              <p class="ai-muted">An amount, or a share of the overall limit. Local services cost nothing and have no limit.</p>
+              <p class="ai-muted">An amount, or a share of the overall limit. Local services cost nothing and have no limit. Speech-to-text is listed while Shoal Subtitles is installed.</p>
               <div id="Limits"></div>
             </details>
             <details class="ai-sub">
@@ -216,6 +223,12 @@
         ];
         // The currencies that can be chosen: replaced by the server's list (Ai/Spending) when it's available; this copy is
         // only a fallback (the euro plus every currency in the European Central Bank's daily rates)
+        // Shoal Subtitles' paid speech-to-text, kept within this budget (KnownProviders.Speech): a limit only, no key here.
+        // Listed when the server says so (Ai/Spending SpeechProviders: Subtitles installed, spending or a limit set)
+        var speechProviders = [
+          ['deepgram', 'Deepgram speech-to-text (Subtitles)'],
+          ['openai-speech', 'OpenAI speech-to-text (Subtitles)']
+        ];
         var currencies = ['AUD', 'BGN', 'BRL', 'CAD', 'CHF', 'CNY', 'CZK', 'DKK', 'EUR', 'GBP', 'HKD', 'HUF', 'IDR', 'ILS', 'INR', 'ISK',
           'JPY', 'KRW', 'MXN', 'MYR', 'NOK', 'NZD', 'PHP', 'PLN', 'RON', 'SEK', 'SGD', 'THB', 'TRY', 'USD', 'ZAR'];
         var config = null;
@@ -265,7 +278,7 @@
 
         function providerSettings(id) {
           var p = (config.Providers || []).filter(function (x) { return x.Id === id; })[0];
-          return p || { Id: id, Enabled: id === 'anthropic', Model: '', BaseUrl: '', BudgetMode: 'OverallOnly', BudgetValue: 0 };
+          return p || { Id: id, Enabled: id === 'anthropic', Model: '', BaseUrl: '', BudgetMode: 'OverallOnly', BudgetValue: 0, PrepaidCredit: 0, PrepaidCreditCurrency: 'USD', PrepaidCreditDate: '' };
         }
 
         function renderProviders(keys) {
@@ -307,7 +320,9 @@
 
         // The providers the spending limits cover, one row each: a list that can grow as more providers are added
         function limitedProviders() {
-          return providers.filter(function (p) { return p[3] && p[0] !== 'openai-compatible'; });
+          var shown = spending && Array.isArray(spending.SpeechProviders) ? spending.SpeechProviders : [];
+          return providers.filter(function (p) { return p[3] && p[0] !== 'openai-compatible'; })
+            .concat(speechProviders.filter(function (p) { return shown.indexOf(p[0]) >= 0; }));
         }
 
         function renderLimits() {
@@ -338,6 +353,7 @@
           c.Enabled = page.querySelector('#Enabled').checked;
           c.AllowIngest = page.querySelector('#AllowIngest').checked;
           c.AllowSubtitles = page.querySelector('#AllowSubtitles').checked;
+          c.AllowSubtitlesSpending = page.querySelector('#AllowSubtitlesSpending').checked;
           c.KeepCallLog = page.querySelector('#KeepCallLog').checked;
           c.Currency = page.querySelector('#Currency').value;
           c.OverallMonthlyBudget = Math.max(0, parseFloat(page.querySelector('#OverallMonthlyBudget').value) || 0);
@@ -359,7 +375,16 @@
               PrepaidCreditCurrency: row.querySelector('.p-credit-cur') ? row.querySelector('.p-credit-cur').value : (v.PrepaidCreditCurrency || 'USD'),
               PrepaidCreditDate: row.querySelector('.p-credit-date') ? row.querySelector('.p-credit-date').value : ''
             };
-          });
+          }).concat(speechProviders.map(function (p) {
+            // Only the limit is set here; a row not listed keeps what was saved
+            var v = JSON.parse(JSON.stringify(providerSettings(p[0])));
+            var limit = page.querySelector('[data-limit="' + p[0] + '"]');
+            if (limit) {
+              v.BudgetMode = limit.querySelector('.l-mode').value;
+              v.BudgetValue = Math.max(0, parseFloat(limit.querySelector('.l-value').value) || 0);
+            }
+            return v;
+          }));
           return c;
         }
 
@@ -539,6 +564,7 @@
             page.querySelector('#Enabled').checked = c.Enabled;
             page.querySelector('#AllowIngest').checked = c.AllowIngest;
             page.querySelector('#AllowSubtitles').checked = c.AllowSubtitles;
+            page.querySelector('#AllowSubtitlesSpending').checked = c.AllowSubtitlesSpending !== false;
             page.querySelector('#KeepCallLog').checked = c.KeepCallLog !== false;
             page.querySelector('#OverallMonthlyBudget').value = c.OverallMonthlyBudget;
             page.querySelector('#NoOverallLimit').checked = !!c.NoOverallLimit;

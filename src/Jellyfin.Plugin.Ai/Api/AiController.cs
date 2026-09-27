@@ -188,7 +188,8 @@ public class AiController : ControllerBase
     }
 
     /// <summary>
-    /// This month's spending on AI providers, in the user's currency.
+    /// This month's spending on paid providers (AI, and Subtitles' speech-to-text kept within this budget), in the user's
+    /// currency.
     /// </summary>
     /// <returns>The spending.</returns>
     [HttpGet("Spending")]
@@ -207,8 +208,30 @@ public class AiController : ControllerBase
             rates?.Date.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
             rates is not null && rates.IsFresh(DateOnly.FromDateTime(DateTime.Now)),
             _spending.Prices?.Version,
-            Pricing.AiSpending.Currencies);
+            Pricing.AiSpending.Currencies,
+            SpeechShown(config, month.PerProvider, SubtitlesInstalled()));
     }
+
+    /// <summary>
+    /// The speech-to-text providers the Spending section lists: all of them while Shoal Subtitles is installed, otherwise
+    /// those with spending this month or a limit of their own.
+    /// </summary>
+    /// <param name="config">The settings.</param>
+    /// <param name="spent">This month's spending per provider.</param>
+    /// <param name="subtitlesInstalled">Whether Shoal Subtitles is loaded.</param>
+    /// <returns>The provider ids, in <see cref="KnownProviders.Speech"/> order.</returns>
+    internal static IReadOnlyList<string> SpeechShown(PluginConfiguration config, IReadOnlyDictionary<string, decimal> spent, bool subtitlesInstalled)
+    {
+        ArgumentNullException.ThrowIfNull(config);
+        ArgumentNullException.ThrowIfNull(spent);
+        return [.. KnownProviders.Speech.Where(id => subtitlesInstalled
+            || spent.ContainsKey(id)
+            || config.Providers.Any(p => p is not null && p.Id == id && p.BudgetMode != ProviderBudgetMode.OverallOnly))];
+    }
+
+    // Shoal Subtitles is loaded in this server (its speech-to-text can be kept within this budget)
+    private static bool SubtitlesInstalled()
+        => AppDomain.CurrentDomain.GetAssemblies().Any(a => string.Equals(a.GetName().Name, "Jellyfin.Plugin.Subtitles", StringComparison.Ordinal));
 
     /// <summary>
     /// What's left of each prepaid credit being tracked.
@@ -290,4 +313,6 @@ public sealed record TestResult(bool Ok, string Message);
 /// <param name="RatesFresh">Whether those rates are recent enough to use.</param>
 /// <param name="PricesVersion">The version of the published prices shipped with the plugin.</param>
 /// <param name="Currencies">The currencies that can be chosen (so the settings page doesn't copy the list).</param>
-public sealed record SpendingSummary(string Currency, decimal? Limit, decimal? Spent, IReadOnlyDictionary<string, decimal> PerProvider, string? RatesDate, bool RatesFresh, string? PricesVersion, IReadOnlyList<string> Currencies);
+/// <param name="SpeechProviders">The speech-to-text providers to list with a limit (Shoal Subtitles' Deepgram and OpenAI,
+/// kept within this budget): all while Subtitles is installed, else those with spending this month or a limit.</param>
+public sealed record SpendingSummary(string Currency, decimal? Limit, decimal? Spent, IReadOnlyDictionary<string, decimal> PerProvider, string? RatesDate, bool RatesFresh, string? PricesVersion, IReadOnlyList<string> Currencies, IReadOnlyList<string> SpeechProviders);

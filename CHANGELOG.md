@@ -5,6 +5,20 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- **One budget page:** the currency, the overall monthly limit and a limit per provider for every paid service in the
+  family are set here, including Shoal Subtitles' paid speech-to-text (Deepgram and OpenAI). Subtitles reserves and
+  records those calls on this plugin's ledger through a new in-process spending entry point
+  (`Bridge.SpendingBridge.HandleAsync`, contract version 1 in common's `SpendingBridgeClient`: reserve, settle,
+  release, carry, summary), and reports what it had already spent this month once, so the month counts it. Its keys
+  stay in Subtitles; only amounts are exchanged.
+  - **Allow Subtitles to use this budget for paid speech-to-text** (`AllowSubtitlesSpending`), on by default. Off, or
+    without this plugin, Subtitles uses its own currency and limit as before.
+  - The Spending section lists Deepgram and OpenAI speech-to-text as limit rows while Subtitles is installed (or once
+    they have spending or a limit); this month's total includes them. `GET Ai/Spending` adds `SpeechProviders`.
+  - A reservation made through the entry point that is left open for an hour is settled at its estimate.
+
 ### Changed
 
 - **UI:** `GET Ai/Calls` returns a page of calls (15 by default) with a `Next` cursor to pass as `before` for the next

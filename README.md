@@ -46,6 +46,11 @@ Uninstalling leaves the plugin's data folder (`keys.json`, `spend.json`, `rates.
   means no paid use; "no limit" is an explicit choice with a warning), plus, if you like, a limit per provider as an
   amount or a share of the overall limit. Providers' charges (usually US dollars) are converted with the European
   Central Bank's daily rates, with an optional percentage for taxes or card fees. Local services cost nothing.
+- **One budget page for the family.** Shoal Subtitles' paid speech-to-text (Deepgram, OpenAI) is kept within the same
+  limits and currency: its spending shows here, with a limit row for each service, and Subtitles' own spending
+  settings are hidden. Its keys stay in Subtitles; only amounts are exchanged. **Allow Subtitles to use this budget
+  for paid speech-to-text** is on by default; untick it (or uninstall this plugin) and Subtitles uses its own limit
+  again.
 
 ## Privacy
 
@@ -88,8 +93,9 @@ last 30 days (at most 1 MB). Switch it off with **Keep a log of AI calls**, or e
 - **Providers and keys:** each provider's key, **Test**, and, folded away, the model and a prepaid credit to count down
   (the amount, the currency it was bought in, usually US dollars, and the date). Providers are listed in a fixed order,
   not an order of preference; for now Anthropic (Claude) is the only one that can be used.
-- **Spending:** this month's spending against the limit, the currency and the overall monthly limit; folded away, a
-  limit per provider and a percentage for taxes or card fees.
+- **Spending:** this month's spending against the limit, the currency, the overall monthly limit and whether Subtitles'
+  paid speech-to-text uses this budget; folded away, a limit per provider (Deepgram and OpenAI speech-to-text are
+  listed while Subtitles is installed) and a percentage for taxes or card fees.
 - **Recent calls:** the call log (on by default; see [The call log](#the-call-log)).
 
 API keys are kept in a file only Jellyfin can read, separate from the plugin settings. They are never shown again,
