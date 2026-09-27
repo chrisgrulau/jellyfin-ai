@@ -62,8 +62,13 @@ See [SECURITY.md](SECURITY.md) and [docs/DESIGN.md](docs/DESIGN.md).
 
 ### The call log
 
-The settings page lists recent AI calls (filterable by plugin) and shows the last error while nothing has succeeded
-since. For each call (from Ingest, Subtitles or the **Test** button) it keeps: the time, the plugin and purpose
+The settings page lists recent AI calls, 15 at a time with **Show more** (filterable by plugin), and shows the last
+error while nothing has succeeded since. Each call reads as one line: what happened ("Ingest asked which film or show
+this is — answered", "Subtitles checked wording — refused: monthly limit reached"), an outcome icon (✅ answered, ⛔
+refused by the spending limits, ⚠ failed; hover for the words), when (relative, with the exact time on hover), the
+cost and how long it took. Open a row (▸) for its details.
+
+For each call (from Ingest, Subtitles or the **Test** button) the log keeps: the time, the plugin and purpose
 (`ingest.match` …), the provider and model, the outcome (answered, refused by the spending limits, or failed and why),
 the tokens billed, the cost (in the provider's currency, and in yours when exchange rates are known), how long it took,
 and either a summary of the answer's shape (field names, numbers and yes/no values; text only by its length) or the
@@ -77,11 +82,15 @@ last 30 days (at most 1 MB). Switch it off with **Keep a log of AI calls**, or e
 
 ## Settings
 
-**Dashboard → Plugins → AI.** Basic settings: what may use AI, providers and their keys, a prepaid credit to count
-down (the amount, the currency it was bought in, usually US dollars, and the date), currency and the overall limit.
-A log of recent calls (on by default; see [The call log](#the-call-log)). Advanced settings: a limit per provider, and a
-percentage for taxes or card fees. Providers are listed in a fixed order,
-not an order of preference; for now Anthropic (Claude) is the only one that can be used.
+**Dashboard → Plugins → Shoal AI.** The page is grouped into sections you can fold away; the everyday ones are open:
+
+- **What may use AI:** allow Ingest and Subtitles (**What is sent** explains what each sends).
+- **Providers and keys:** each provider's key, **Test**, and, folded away, the model and a prepaid credit to count down
+  (the amount, the currency it was bought in, usually US dollars, and the date). Providers are listed in a fixed order,
+  not an order of preference; for now Anthropic (Claude) is the only one that can be used.
+- **Spending:** this month's spending against the limit, the currency and the overall monthly limit; folded away, a
+  limit per provider and a percentage for taxes or card fees.
+- **Recent calls:** the call log (on by default; see [The call log](#the-call-log)).
 
 API keys are kept in a file only Jellyfin can read, separate from the plugin settings. They are never shown again,
 logged or included in exports; the settings page can only replace or clear them.

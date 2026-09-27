@@ -87,8 +87,16 @@ choice and nothing was sent.
   after 100 calls past the limit, or past 1 MB: a new owner-only file is written, flushed and renamed over the old one.
   A damaged line (a crash mid-append) is skipped when read and dropped at the next trim. A file that can't be read is
   never overwritten. Recording never fails a call.
-- **API:** `GET Ai/Calls?limit=&caller=` (administrators) returns the calls newest first (in the order they finished),
-  whether logging is on, and the last error: the newest call, if it wasn't answered. `DELETE Ai/Calls` empties the log
+- **API:** `GET Ai/Calls?limit=&before=&caller=` (administrators) returns a page of calls (15 by default) newest first
+  (in the order they finished), whether logging is on, the last error (the newest call, if it wasn't answered), and
+  `Next`, the cursor to pass as `before` for the next page. The cursor is each entry's place in the log, numbered in
+  memory as it is read or recorded (never saved), so calls recorded while the list is open don't shift the pages; after
+  a restart the page simply starts again from the newest.
+- **Presentation:** `Calls.CallPresenter` words each call on the server, so it can be tested: a headline from the
+  caller, purpose and outcome ("Subtitles checked wording — refused: monthly limit reached"; unknown purposes read as
+  "asked for help"), an outcome icon and label (✅ / ⛔ / ⚠, "Failed (charged)" for a billed failure), compact cost (in
+  the settings' currency when converted) and duration, and the technical details as terms and values. The page adds
+  only the time relative to now (the viewer's clock and time zone), with the exact local time on hover. `DELETE Ai/Calls` empties the log
   (the page asks for a second click).
 
 ## Failures

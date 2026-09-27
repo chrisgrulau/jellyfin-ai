@@ -7,33 +7,71 @@
 <body>
   <div id="AiConfigPage" data-role="page" class="page type-interior pluginConfigurationPage" data-require="emby-input,emby-button,emby-checkbox,emby-select">
     <style>
-      #AiConfigPage .ai-provider { display: grid; grid-template-columns: minmax(10em, 1fr) minmax(16em, 1.6fr) minmax(12em, 1.2fr); gap: .5em 1em; align-items: end; padding: .75em 0; border-bottom: 1px solid rgba(128,128,128,.2); }
-      #AiConfigPage .ai-provider .inputContainer, #AiConfigPage .ai-provider .selectContainer, #AiConfigPage .ai-provider .checkboxContainer { margin: 0; }
-      #AiConfigPage .ai-key { display: flex; gap: .5em; align-items: end; flex-wrap: wrap; }
-      #AiConfigPage .ai-key .inputContainer { flex: 1 1 12em; }
-      #AiConfigPage .ai-credit { display: flex; gap: .5em 1em; align-items: end; flex-wrap: wrap; }
-      #AiConfigPage .ai-credit .inputContainer { flex: 1 1 12em; margin-bottom: 0; }
-      #AiConfigPage .ai-muted { opacity: .7; font-size: .9em; }
+      /* Colours are tints over the theme's own text and background, so they read in the light and dark themes (FAM-07) */
+      #AiConfigPage { --ai-line: rgba(128,128,128,.25); --ai-tint: rgba(128,128,128,.1); --ai-accent: rgba(0,164,220,.85); }
+      #AiConfigPage .ai-muted { opacity: .75; font-size: .9em; }
       #AiConfigPage .ai-set { font-weight: 600; }
-      #AiConfigPage .ai-later { grid-template-columns: minmax(10em, 1fr) 2.8fr; align-items: center; opacity: .75; }
-      #AiConfigPage details.ai-advanced { margin-top: 2em; border-top: 1px solid rgba(128,128,128,.25); padding-top: 1em; }
-      #AiConfigPage details.ai-advanced > summary { cursor: pointer; font-size: 1.1em; }
-      /* Tinted backgrounds with the theme's own text colour, so they read in the light and dark themes (FAM-07) */
-      #AiConfigPage .ai-warning { padding: .75em 1em; border-radius: 4px; margin: .5em 0; background: rgba(255,170,0,.15); border-left: 4px solid rgba(255,170,0,.8); }
-      #AiConfigPage .ai-error { padding: .75em 1em; border-radius: 4px; margin: .5em 0; background: rgba(220,50,50,.2); border-left: 4px solid rgba(220,50,50,.9); }
-      #AiConfigPage .ai-limit { display: grid; grid-template-columns: minmax(10em, 1fr) minmax(12em, 1fr) minmax(8em, .8fr); gap: .5em 1em; align-items: end; padding: .5em 0; }
-      #AiConfigPage .ai-calls-bar { display: flex; gap: .5em 1em; align-items: end; flex-wrap: wrap; margin: .5em 0; }
-      #AiConfigPage .ai-calls-bar .selectContainer { margin: 0; min-width: 12em; }
-      #AiConfigPage .ai-calls-wrap { overflow-x: auto; }
-      #AiConfigPage table.ai-calls { width: 100%; border-collapse: collapse; font-size: .9em; }
-      #AiConfigPage table.ai-calls th, #AiConfigPage table.ai-calls td { text-align: left; padding: .35em .5em; border-bottom: 1px solid rgba(128,128,128,.2); vertical-align: top; }
-      #AiConfigPage table.ai-calls td.ai-num { text-align: right; white-space: nowrap; }
-      @media (max-width: 720px) { #AiConfigPage .ai-provider, #AiConfigPage .ai-limit { grid-template-columns: 1fr; } }
+      #AiConfigPage .ai-warning { padding: .6em .9em; border-radius: 4px; margin: .5em 0; background: rgba(255,170,0,.15); border-left: 4px solid rgba(255,170,0,.8); }
+      #AiConfigPage .ai-error { padding: .6em .9em; border-radius: 4px; margin: .5em 0; background: rgba(220,50,50,.18); border-left: 4px solid rgba(220,50,50,.9); }
+
+      /* Sections: the common ones open, the rest closed */
+      #AiConfigPage details.ai-section { border-top: 1px solid var(--ai-line); padding: .4em 0 .8em; }
+      #AiConfigPage details.ai-section > summary { cursor: pointer; font-size: 1.25em; padding: .5em 0; }
+      #AiConfigPage details.ai-sub { margin: .5em 0; }
+      #AiConfigPage details.ai-sub > summary { cursor: pointer; opacity: .85; padding: .3em 0; }
+      #AiConfigPage details.ai-sub[open] { padding-bottom: .4em; }
+
+      /* A small "?" that opens a longer explanation */
+      #AiConfigPage details.ai-help { margin: .25em 0 .5em; font-size: .9em; }
+      #AiConfigPage details.ai-help > summary { list-style: none; cursor: pointer; display: inline-flex; align-items: center; gap: .4em; opacity: .75; }
+      #AiConfigPage details.ai-help > summary::-webkit-details-marker { display: none; }
+      #AiConfigPage details.ai-help > summary::before { content: '?'; display: inline-grid; place-items: center; width: 1.4em; height: 1.4em; border-radius: 50%; border: 1px solid currentColor; font-weight: 600; font-size: .85em; }
+      #AiConfigPage details.ai-help > div { margin: .4em 0 0; padding: .5em .8em; border-radius: 4px; background: var(--ai-tint); }
+
+      /* Providers */
+      #AiConfigPage .ai-provider { padding: .5em 0 .75em; border-bottom: 1px solid var(--ai-line); }
+      #AiConfigPage .ai-provider .checkboxContainer { margin-bottom: .25em; }
+      #AiConfigPage .ai-row { display: flex; gap: .5em 1em; align-items: end; flex-wrap: wrap; }
+      #AiConfigPage .ai-row .inputContainer, #AiConfigPage .ai-row .selectContainer { flex: 1 1 12em; margin: 0; }
+      #AiConfigPage .ai-row > button { margin: 0; }
+
+      /* Spending: a line for the month, then a row per provider (grows as more providers are added) */
+      #AiConfigPage .ai-meter { height: .5em; border-radius: .25em; background: var(--ai-line); overflow: hidden; margin: .3em 0 .2em; max-width: 28em; }
+      #AiConfigPage .ai-meter > div { height: 100%; background: var(--ai-accent); }
+      #AiConfigPage .ai-meter.ai-high > div { background: rgba(255,170,0,.9); }
+      #AiConfigPage .ai-limit { display: grid; grid-template-columns: minmax(8em, 1fr) minmax(12em, 1.2fr) minmax(7em, .8fr); gap: .5em 1em; align-items: end; padding: .4em 0; border-bottom: 1px solid var(--ai-line); }
+      #AiConfigPage .ai-limit .selectContainer, #AiConfigPage .ai-limit .inputContainer { margin: 0; }
+
+      /* Recent calls: a headline per call, details on demand */
+      #AiConfigPage .ai-calls-bar { display: flex; gap: .5em 1em; align-items: end; flex-wrap: wrap; margin: .25em 0 .5em; }
+      #AiConfigPage .ai-calls-bar .selectContainer { margin: 0; min-width: 11em; }
+      #AiConfigPage .ai-calls-bar > button { margin: 0; }
+      #AiConfigPage ul.ai-calls { list-style: none; margin: 0; padding: 0; }
+      #AiConfigPage ul.ai-calls > li { border-bottom: 1px solid var(--ai-line); }
+      #AiConfigPage details.ai-call > summary { list-style: none; cursor: pointer; display: grid; grid-template-columns: 1em 1.6em 1fr auto; gap: .5em; align-items: baseline; padding: .45em .25em; }
+      #AiConfigPage details.ai-call > summary::-webkit-details-marker { display: none; }
+      #AiConfigPage details.ai-call > summary:hover { background: var(--ai-tint); }
+      #AiConfigPage .ai-caret { display: inline-block; transition: transform .15s; opacity: .7; }
+      #AiConfigPage details.ai-call[open] .ai-caret { transform: rotate(90deg); }
+      #AiConfigPage .ai-chip { text-align: center; }
+      #AiConfigPage .ai-when { white-space: nowrap; text-align: right; font-size: .9em; opacity: .8; }
+      #AiConfigPage dl.ai-details { display: grid; grid-template-columns: max-content 1fr; gap: .2em 1em; margin: 0 0 .6em 3.1em; padding: .5em .8em; border-radius: 4px; background: var(--ai-tint); font-size: .9em; }
+      #AiConfigPage dl.ai-details dt { opacity: .75; }
+      #AiConfigPage dl.ai-details dd { margin: 0; overflow-wrap: anywhere; }
+
+      @media (max-width: 720px) {
+        #AiConfigPage .ai-limit { grid-template-columns: 1fr 1fr; }
+        #AiConfigPage .ai-limit > :first-child { grid-column: 1 / -1; }
+        #AiConfigPage details.ai-call > summary { grid-template-columns: 1em 1.6em 1fr; }
+        #AiConfigPage .ai-when { grid-column: 3; text-align: left; }
+        #AiConfigPage dl.ai-details { grid-template-columns: 1fr; margin-left: 0; }
+        #AiConfigPage dl.ai-details dd { margin-bottom: .3em; }
+      }
     </style>
     <div data-role="content">
       <div class="content-primary">
         <h2 class="sectionTitle">Shoal AI</h2>
-        <p>Lets the other plugins ask an AI model for help with hard decisions, within limits you set. Nothing uses it until you allow it below, and everything keeps working without it.</p>
+        <p class="ai-muted">Optional AI help for the other Shoal plugins' hard decisions, within limits you set. Nothing is sent until you allow it.</p>
 
         <form id="AiConfigForm">
           <div class="checkboxContainer">
@@ -43,89 +81,122 @@
             </label>
           </div>
 
-          <h3 class="sectionTitle" style="margin-top:1.5em">What may use AI</h3>
-          <div class="checkboxContainer checkboxContainer-withDescription">
-            <label class="emby-checkbox-label">
-              <input id="AllowIngest" type="checkbox" is="emby-checkbox" />
-              <span>Ingest: help identify releases it can't decide on</span>
-            </label>
-            <div class="fieldDescription checkboxFieldDescription">Sends release names, the titles and years it read, and the candidate titles.</div>
-          </div>
-          <div class="checkboxContainer checkboxContainer-withDescription">
-            <label class="emby-checkbox-label">
-              <input id="AllowSubtitles" type="checkbox" is="emby-checkbox" />
-              <span>Subtitles: help judge whether a subtitle matches</span>
-            </label>
-            <div class="fieldDescription checkboxFieldDescription">Sends short subtitle and transcript excerpts with the title.</div>
-          </div>
-          <p class="ai-muted">Never sent: file paths, user names, or anything from home video and photo libraries. What is sent goes only to the providers you enable below.</p>
-
-          <h3 class="sectionTitle" style="margin-top:1.5em">Providers</h3>
-          <p class="ai-muted">Keys are stored on this server in a file only Jellyfin can read. They are never shown again, logged or included in exports; you can replace or clear them.</p>
-          <div id="Providers"></div>
-          <div id="AiStatus" class="ai-muted" role="status" aria-live="polite" style="margin:.5em 0"></div>
-
-          <h3 class="sectionTitle" style="margin-top:1.5em">Spending</h3>
-          <div class="selectContainer">
-            <label class="selectLabel" for="Currency">Currency</label>
-            <select is="emby-select" id="Currency"></select>
-            <div class="fieldDescription">Limits and costs are shown and set in this currency. Providers usually charge in US dollars; charges are converted using the European Central Bank's daily rates, and pause rather than guess if current rates aren't available.</div>
-          </div>
-          <div class="inputContainer">
-            <label class="inputLabel inputLabelUnfocused" for="OverallMonthlyBudget">Overall monthly limit for all paid providers (<span class="ai-currency">USD</span>)</label>
-            <input id="OverallMonthlyBudget" type="number" min="0" step="0.01" is="emby-input" />
-            <div class="fieldDescription">0 = no paid providers at all. Limits you set with each provider always apply as well.</div>
-          </div>
-          <div class="checkboxContainer checkboxContainer-withDescription">
-            <label class="emby-checkbox-label">
-              <input id="NoOverallLimit" type="checkbox" is="emby-checkbox" />
-              <span>No overall limit</span>
-            </label>
-            <div class="fieldDescription checkboxFieldDescription">Not recommended. Each provider's own limit (under Advanced settings) still applies.</div>
-          </div>
-          <div id="SpendingNow" class="ai-muted" style="margin:.5em 0 1em"></div>
-          <div id="BudgetMessages" aria-live="polite"></div>
-
-          <h3 class="sectionTitle" style="margin-top:1.5em">Recent calls</h3>
-          <div class="checkboxContainer checkboxContainer-withDescription">
-            <label class="emby-checkbox-label">
-              <input id="KeepCallLog" type="checkbox" is="emby-checkbox" />
-              <span>Keep a log of AI calls</span>
-            </label>
-            <div class="fieldDescription checkboxFieldDescription">Records the time, which plugin asked and why, the model, the outcome, tokens, cost and duration of each call, for the last 1,000 calls or 30 days. Never what was sent: only its size. Kept on this server in a file only Jellyfin can read.</div>
-          </div>
-          <div id="LastError" role="status" aria-live="polite"></div>
-          <div class="ai-calls-bar">
-            <div class="selectContainer">
-              <label class="selectLabel" for="CallsCaller">Show calls from</label>
-              <select is="emby-select" id="CallsCaller">
-                <option value="">All</option>
-                <option value="ingest">Ingest</option>
-                <option value="subtitles">Subtitles</option>
-                <option value="test">Test button</option>
-                <option value="other">Other</option>
-              </select>
+          <details class="ai-section" open>
+            <summary>What may use AI</summary>
+            <div class="checkboxContainer">
+              <label class="emby-checkbox-label">
+                <input id="AllowIngest" type="checkbox" is="emby-checkbox" />
+                <span>Ingest: help identify releases it can't decide on</span>
+              </label>
             </div>
-            <button is="emby-button" type="button" class="raised" id="CallsRefresh"><span>Refresh</span></button>
-            <button is="emby-button" type="button" class="raised button-alt" id="CallsClear"><span>Clear log</span></button>
-          </div>
-          <div id="Calls" class="ai-calls-wrap"></div>
-
-          <details class="ai-advanced">
-            <summary>Advanced settings</summary>
-            <div class="ai-warning">These settings control spending in detail. The defaults are safe; check the messages above after changing them.</div>
-            <h3 class="sectionTitle">Limit per provider</h3>
-            <p class="ai-muted">Each provider can have its own monthly limit, as an amount or as a share of the overall limit (mix them as you like). A provider stops at whichever limit it reaches first. Local services cost nothing and have no limit.</p>
-            <div id="Limits"></div>
-            <h3 class="sectionTitle">Costs</h3>
-            <div class="inputContainer">
-              <label class="inputLabel inputLabelUnfocused" for="ExtraChargesPercent">Add to provider prices (%)</label>
-              <input id="ExtraChargesPercent" type="number" min="0" max="100" step="0.1" is="emby-input" />
-              <div class="fieldDescription">For taxes charged on overseas services (such as GST) or your card's foreign-transaction fee, so limits match what you actually pay. Default 0.</div>
+            <div class="checkboxContainer">
+              <label class="emby-checkbox-label">
+                <input id="AllowSubtitles" type="checkbox" is="emby-checkbox" />
+                <span>Subtitles: help judge whether a subtitle matches</span>
+              </label>
             </div>
+            <details class="ai-help">
+              <summary>What is sent</summary>
+              <div>
+                <p>Ingest sends release names, the titles and years it read, and the candidate titles. Subtitles sends short subtitle and transcript excerpts with the title.</p>
+                <p>Never sent: file paths, user names, or anything from home video and photo libraries. What is sent goes only to the providers you enable below.</p>
+              </div>
+            </details>
           </details>
 
-          <div style="margin-top:2em">
+          <details class="ai-section" open>
+            <summary>Providers and keys</summary>
+            <div id="Providers"></div>
+            <div id="ProvidersLater" class="ai-muted" style="margin:.5em 0"></div>
+            <div id="AiStatus" class="ai-muted" role="status" aria-live="polite" style="margin:.5em 0"></div>
+            <details class="ai-help">
+              <summary>About keys, models and the Test button</summary>
+              <div>
+                <p>Keys are stored on this server in a file only Jellyfin can read. They are never shown again, logged or included in exports; you can replace or clear them.</p>
+                <p>Leave the model empty to use the recommended model (for Claude, Claude Opus 5.5), updated with plugin releases. Naming a model pins it: it may cost more, and the provider may retire it.</p>
+                <p><strong>Test</strong> sends one tiny request (a fraction of a cent, counted like any other). A prepaid credit is usually bought in US dollars; what's left counts only this plugin's use of the key.</p>
+              </div>
+            </details>
+          </details>
+
+          <details class="ai-section" open>
+            <summary>Spending</summary>
+            <div id="SpendingNow" aria-live="polite"></div>
+            <div class="ai-row" style="margin-top:.75em">
+              <div class="selectContainer">
+                <label class="selectLabel" for="Currency">Currency</label>
+                <select is="emby-select" id="Currency"></select>
+              </div>
+              <div class="inputContainer">
+                <label class="inputLabel inputLabelUnfocused" for="OverallMonthlyBudget">Monthly limit, all paid providers (<span class="ai-currency">USD</span>)</label>
+                <input id="OverallMonthlyBudget" type="number" min="0" step="0.01" is="emby-input" />
+              </div>
+            </div>
+            <div class="checkboxContainer" style="margin-top:.5em">
+              <label class="emby-checkbox-label">
+                <input id="NoOverallLimit" type="checkbox" is="emby-checkbox" />
+                <span>No overall limit (not recommended)</span>
+              </label>
+            </div>
+            <details class="ai-help">
+              <summary>How limits and currencies work</summary>
+              <div>
+                <p>0 means no paid providers at all. A provider stops at whichever limit it reaches first: the overall limit, its own limit below, or the one you set with the provider.</p>
+                <p>Providers usually charge in US dollars; charges are converted with the European Central Bank's daily rates, and paid calls pause rather than guess if current rates aren't available.</p>
+                <p id="SpendingSources"></p>
+              </div>
+            </details>
+            <div id="BudgetMessages" aria-live="polite"></div>
+
+            <details class="ai-sub" id="SpendingProviders">
+              <summary>Limit per provider</summary>
+              <p class="ai-muted">An amount, or a share of the overall limit. Local services cost nothing and have no limit.</p>
+              <div id="Limits"></div>
+            </details>
+            <details class="ai-sub">
+              <summary>Taxes and card fees</summary>
+              <div class="inputContainer">
+                <label class="inputLabel inputLabelUnfocused" for="ExtraChargesPercent">Add to provider prices (%)</label>
+                <input id="ExtraChargesPercent" type="number" min="0" max="100" step="0.1" is="emby-input" />
+                <div class="fieldDescription">For GST on overseas services or a foreign-transaction fee, so limits match what you pay. Default 0.</div>
+              </div>
+            </details>
+          </details>
+
+          <details class="ai-section" open>
+            <summary>Recent calls</summary>
+            <div id="LastError" role="status" aria-live="polite"></div>
+            <div class="ai-calls-bar">
+              <div class="selectContainer">
+                <label class="selectLabel" for="CallsCaller">Show calls from</label>
+                <select is="emby-select" id="CallsCaller">
+                  <option value="">All</option>
+                  <option value="ingest">Ingest</option>
+                  <option value="subtitles">Subtitles</option>
+                  <option value="test">Test button</option>
+                  <option value="other">Other</option>
+                </select>
+              </div>
+              <button is="emby-button" type="button" class="raised" id="CallsRefresh"><span>Refresh</span></button>
+              <button is="emby-button" type="button" class="raised button-alt" id="CallsClear"><span>Clear log</span></button>
+            </div>
+            <div id="Calls"></div>
+            <div style="margin:.5em 0"><button is="emby-button" type="button" class="raised" id="CallsMore" style="display:none"><span>Show more</span></button></div>
+            <div class="checkboxContainer" style="margin:1em 0 0">
+              <label class="emby-checkbox-label">
+                <input id="KeepCallLog" type="checkbox" is="emby-checkbox" />
+                <span>Keep a log of AI calls</span>
+              </label>
+            </div>
+            <details class="ai-help">
+              <summary>What the log keeps</summary>
+              <div>
+                <p>The time, which plugin asked and why, the model, the outcome, tokens, cost and duration of each call, for the last 1,000 calls or 30 days. Never what was sent (only its size) or the answer's text. Kept on this server in a file only Jellyfin can read.</p>
+              </div>
+            </details>
+          </details>
+
+          <div style="margin-top:1.5em">
             <button is="emby-button" type="submit" class="raised button-submit block emby-button"><span>Save</span></button>
           </div>
         </form>
@@ -136,7 +207,7 @@
         var pluginId = '5f260705-cb7c-4fee-8324-b40202261739';
         var page = document.querySelector('#AiConfigPage');
         // As KnownProviders.All, in its fixed order; the last value is KnownProviders.IsAvailable. Providers not available
-        // yet are shown as coming later, and whatever was saved for them is sent back unchanged (FAM-08)
+        // yet are listed as coming later, and whatever was saved for them is sent back unchanged (FAM-08)
         var providers = [
           ['anthropic', 'Anthropic (Claude)', 'claude-opus-5-5 (recommended)', true],
           ['openai', 'OpenAI', 'Current recommended (automatic)', false],
@@ -149,6 +220,7 @@
           'JPY', 'KRW', 'MXN', 'MYR', 'NOK', 'NZD', 'PHP', 'PLN', 'RON', 'SEK', 'SGD', 'THB', 'TRY', 'USD', 'ZAR'];
         var config = null;
         var checkTimer = null;
+        var spending = null;
 
         // Announced to screen readers as well as shown (FAM-07)
         function say(text) { page.querySelector('#AiStatus').textContent = text || ''; }
@@ -166,52 +238,99 @@
 
         function esc(s) { return String(s == null ? '' : s).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
 
+        function money(amount, currency) { return currency + ' ' + Number(amount).toFixed(amount > 0 && amount < 0.01 ? 4 : 2); }
+
+        // "just now", "5 minutes ago", "3 hours ago", "yesterday", "2 days ago", then a short date
+        function ago(t) {
+          var d = new Date(t);
+          if (isNaN(d)) { return String(t); }
+          var now = new Date();
+          var s = (now - d) / 1000;
+          if (s < 45) { return 'just now'; }
+          var m = Math.round(s / 60);
+          if (m < 60) { return m <= 1 ? '1 minute ago' : m + ' minutes ago'; }
+          var day = function (x) { return new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime(); };
+          var days = Math.round((day(now) - day(d)) / 86400000);
+          if (days <= 0) { var h = Math.floor(s / 3600); return h <= 1 ? '1 hour ago' : h + ' hours ago'; }
+          if (days === 1) { return 'yesterday'; }
+          if (days < 7) { return days + ' days ago'; }
+          return d.toLocaleDateString(undefined, d.getFullYear() === now.getFullYear() ? { day: 'numeric', month: 'short' } : { day: 'numeric', month: 'short', year: 'numeric' });
+        }
+        // The exact local date and time, without seconds (for tooltips)
+        function exact(t) {
+          var d = new Date(t);
+          return isNaN(d) ? String(t) : d.toLocaleString(undefined, { year: 'numeric', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+        }
+        function timeTag(t) { return '<time datetime="' + esc(t) + '" title="' + esc(exact(t)) + '">' + esc(ago(t)) + '</time>'; }
+
         function providerSettings(id) {
           var p = (config.Providers || []).filter(function (x) { return x.Id === id; })[0];
           return p || { Id: id, Enabled: id === 'anthropic', Model: '', BaseUrl: '', BudgetMode: 'OverallOnly', BudgetValue: 0 };
         }
 
         function renderProviders(keys) {
-          page.querySelector('#Providers').innerHTML = providers.map(function (p) {
+          var later = providers.filter(function (p) { return !p[3]; });
+          var kept = later.some(function (p) { var v = providerSettings(p[0]); return (keys && keys[p[0]]) || v.Model || v.BaseUrl || v.PrepaidCredit; });
+          page.querySelector('#ProvidersLater').textContent = later.length
+            ? 'Coming later: ' + later.map(function (p) { return p[1]; }).join(', ') + '.' + (kept ? ' What you saved for them earlier is kept.' : '')
+            : '';
+          page.querySelector('#Providers').innerHTML = providers.filter(function (p) { return p[3]; }).map(function (p) {
             var v = providerSettings(p[0]);
             var set = keys && keys[p[0]];
             var f = 'p-' + p[0] + '-';
-            if (!p[3]) {
-              return '<div class="ai-provider ai-later" data-provider="' + p[0] + '" data-later="1"><div>' + esc(p[1]) + '</div>' +
-                '<div class="ai-muted">Coming later: not available in this version.' + (set || v.Model || v.BaseUrl || v.PrepaidCredit ? ' What you saved for it earlier is kept.' : '') + '</div></div>';
-            }
+            var credit = p[0] === 'openai-compatible' ? '' :
+              '<div class="ai-row">' +
+              '<div class="inputContainer"><label class="inputLabel inputLabelUnfocused" for="' + f + 'credit">Prepaid credit</label><input is="emby-input" type="number" min="0" step="0.01" class="p-credit" id="' + f + 'credit" value="' + esc(v.PrepaidCredit || '') + '" placeholder="Not tracked" /></div>' +
+              '<div class="selectContainer"><label class="selectLabel" for="' + f + 'credit-cur">Bought in</label><select is="emby-select" class="p-credit-cur" id="' + f + 'credit-cur">' +
+              currencies.map(function (x) { return '<option value="' + x + '"' + (x === (v.PrepaidCreditCurrency || 'USD') ? ' selected' : '') + '>' + x + '</option>'; }).join('') + '</select></div>' +
+              '<div class="inputContainer"><label class="inputLabel inputLabelUnfocused" for="' + f + 'credit-date">Bought or topped up on</label><input is="emby-input" type="date" class="p-credit-date" id="' + f + 'credit-date" value="' + esc(v.PrepaidCreditDate || '') + '" /></div>' +
+              '</div>';
+            var url = p[0] !== 'openai-compatible' ? '' :
+              '<div class="inputContainer"><label class="inputLabel inputLabelUnfocused" for="' + f + 'url">Address</label><input is="emby-input" type="url" class="p-url" id="' + f + 'url" value="' + esc(v.BaseUrl) + '" placeholder="http://localhost:11434/v1" />' +
+              '<div class="fieldDescription">A local address counts as free, with no spending limit; set a limit in any paid service it relays to.</div></div>';
             return '<div class="ai-provider" data-provider="' + p[0] + '">' +
               '<div class="checkboxContainer"><label class="emby-checkbox-label"><input is="emby-checkbox" type="checkbox" class="p-on"' + (v.Enabled ? ' checked' : '') + ' /><span>' + esc(p[1]) + '</span></label></div>' +
-              '<div class="ai-key"><div class="inputContainer"><label class="inputLabel inputLabelUnfocused" for="' + f + 'key">API key: ' + (set ? '<span class="ai-set">✓ set</span>' : 'not set') + '</label>' +
+              '<div class="ai-row"><div class="inputContainer"><label class="inputLabel inputLabelUnfocused" for="' + f + 'key">API key: ' + (set ? '<span class="ai-set">✓ set</span>' : 'not set') + '</label>' +
               '<input is="emby-input" type="password" class="p-key" id="' + f + 'key" autocomplete="off" placeholder="' + (set ? 'Enter a new key to replace it' : 'Paste the key') + '" /></div>' +
               '<button is="emby-button" type="button" class="raised p-savekey"><span>Save key</span></button>' +
               (set ? '<button is="emby-button" type="button" class="raised button-alt p-clearkey"><span>Clear</span></button>' : '') +
-              '<button is="emby-button" type="button" class="raised p-test"><span>Test</span></button><div class="p-result ai-muted" aria-live="polite" style="flex-basis:100%"></div></div>' +
-              '<div>' +
+              '<button is="emby-button" type="button" class="raised p-test"><span>Test</span></button></div>' +
+              '<div class="p-result ai-muted" aria-live="polite"></div>' +
+              '<div class="p-credit-left ai-muted"></div>' +
+              '<details class="ai-sub"><summary>Model' + (p[0] === 'openai-compatible' ? ' and address' : ' and prepaid credit') + (v.Model ? ': ' + esc(v.Model) : '') + '</summary>' +
               '<div class="inputContainer"><label class="inputLabel inputLabelUnfocused" for="' + f + 'model">Model</label><input is="emby-input" type="text" class="p-model" id="' + f + 'model" value="' + esc(v.Model) + '" placeholder="' + esc(p[2]) + '" /></div>' +
-              (p[0] === 'openai-compatible' ? '' : '<div class="ai-credit"><div class="inputContainer"><label class="inputLabel inputLabelUnfocused" for="' + f + 'credit">Prepaid credit</label><input is="emby-input" type="number" min="0" step="0.01" class="p-credit" id="' + f + 'credit" value="' + esc(v.PrepaidCredit || '') + '" placeholder="Not tracked" /></div>' +
-                '<div class="selectContainer"><label class="selectLabel" for="' + f + 'credit-cur">Bought in</label><select is="emby-select" class="p-credit-cur" id="' + f + 'credit-cur">' +
-                currencies.map(function (x) { return '<option value="' + x + '"' + (x === (v.PrepaidCreditCurrency || 'USD') ? ' selected' : '') + '>' + x + '</option>'; }).join('') + '</select></div>' +
-                '<div class="inputContainer"><label class="inputLabel inputLabelUnfocused" for="' + f + 'credit-date">Bought or topped up on</label><input is="emby-input" type="date" class="p-credit-date" id="' + f + 'credit-date" value="' + esc(v.PrepaidCreditDate || '') + '" /></div>' +
-                '<div class="p-credit-left ai-muted" style="flex-basis:100%"></div></div>') +
-              (p[0] === 'openai-compatible' ? '<div class="inputContainer"><label class="inputLabel inputLabelUnfocused" for="' + f + 'url">Address</label><input is="emby-input" type="url" class="p-url" id="' + f + 'url" value="' + esc(v.BaseUrl) + '" placeholder="http://localhost:11434/v1" /><div class="fieldDescription">An address on this server or your local network counts as free: it has no spending limit. If it relays to a paid service (for example LiteLLM or an OpenRouter proxy), set a limit in that service.</div></div>' : '') +
-              '</div></div>';
-          }).join('') + '<p class="ai-muted">Leave the model empty to use the recommended model (for Claude, Claude Opus 5.5), updated with plugin releases. Naming a model pins it: it may cost more than the recommended one, and the provider may retire it. <strong>Test</strong> sends one tiny request (a fraction of a cent, counted like any other). A prepaid credit is usually bought in US dollars.</p>';
+              url + credit + '</details>' +
+              '</div>';
+          }).join('');
           renderLimits();
         }
 
+        // The providers the spending limits cover, one row each: a list that can grow as more providers are added
+        function limitedProviders() {
+          return providers.filter(function (p) { return p[3] && p[0] !== 'openai-compatible'; });
+        }
+
         function renderLimits() {
-          page.querySelector('#Limits').innerHTML = providers.filter(function (p) { return p[3] && p[0] !== 'openai-compatible'; }).map(function (p) {
+          var modes = [['OverallOnly', 'Overall limit only'], ['Amount', 'Amount per month'], ['PercentOfOverall', 'Share of overall (%)']];
+          page.querySelector('#Limits').innerHTML = limitedProviders().map(function (p) {
             var v = providerSettings(p[0]);
+            var f = 'l-' + p[0] + '-';
+            var spent = spending && spending.PerProvider && spending.PerProvider[p[0]] != null ? money(spending.PerProvider[p[0]], spending.Currency) + ' this month' : '';
             return '<div class="ai-limit" data-limit="' + p[0] + '">' +
-              '<div>' + esc(p[1]) + '</div>' +
-              '<div class="selectContainer"><label class="selectLabel">Limit</label><select is="emby-select" class="l-mode">' +
-              [['OverallOnly', 'Overall limit only'], ['Amount', 'Amount per month'], ['PercentOfOverall', 'Share of overall limit (%)']].map(function (m) {
-                return '<option value="' + m[0] + '"' + (v.BudgetMode === m[0] ? ' selected' : '') + '>' + m[1] + '</option>';
-              }).join('') + '</select></div>' +
-              '<div class="inputContainer"><label class="inputLabel inputLabelUnfocused">Value</label><input is="emby-input" type="number" min="0" step="0.01" class="l-value" value="' + esc(v.BudgetValue || 0) + '" /></div>' +
+              '<div>' + esc(p[1]) + (spent ? '<div class="ai-muted">' + esc(spent) + '</div>' : '') + '</div>' +
+              '<div class="selectContainer"><label class="selectLabel" for="' + f + 'mode">Limit</label><select is="emby-select" class="l-mode" id="' + f + 'mode">' +
+              modes.map(function (m) { return '<option value="' + m[0] + '"' + (v.BudgetMode === m[0] ? ' selected' : '') + '>' + m[1] + '</option>'; }).join('') + '</select></div>' +
+              '<div class="inputContainer"><label class="inputLabel inputLabelUnfocused" for="' + f + 'value">Value</label><input is="emby-input" type="number" min="0" step="0.01" class="l-value" id="' + f + 'value" value="' + esc(v.BudgetValue || 0) + '" /></div>' +
               '</div>';
           }).join('');
+          showLimitValues();
+        }
+
+        // A value is only asked for when the limit needs one
+        function showLimitValues() {
+          Array.prototype.forEach.call(page.querySelectorAll('[data-limit]'), function (row) {
+            row.querySelector('.l-value').disabled = row.querySelector('.l-mode').value === 'OverallOnly';
+          });
         }
 
         function fromPage() {
@@ -255,38 +374,59 @@
         }
 
         function refresh() {
+          if (!config) { return; }
           page.querySelector('#OverallMonthlyBudget').disabled = page.querySelector('#NoOverallLimit').checked;
           Array.prototype.forEach.call(page.querySelectorAll('.ai-currency'), function (e) { e.textContent = page.querySelector('#Currency').value; });
+          showLimitValues();
           clearTimeout(checkTimer);
           checkTimer = setTimeout(function () { check(fromPage()).then(showMessages); }, 300);
         }
 
-        // This month's spending, the limit and the exchange rates behind it
+        // This month's spending against the limit; where the rates and prices come from goes in the "?" note
         function loadSpending() {
           var box = page.querySelector('#SpendingNow');
+          var sources = page.querySelector('#SpendingSources');
           return ApiClient.getJSON(ApiClient.getUrl('Ai/Spending')).then(function (s) {
+            spending = s;
             var listed = Array.isArray(s.Currencies) ? s.Currencies.filter(function (x) { return /^[A-Z]{3}$/.test(x); }) : [];
             if (listed.length) { currencies = listed; }
-            var fmt = function (n) { return s.Currency + ' ' + Number(n).toFixed(n > 0 && n < 0.01 ? 4 : 2); };
-            var parts = ['This month: ' + (s.Spent == null ? 'unknown (no current exchange rates)' : fmt(s.Spent)) + (s.Limit == null ? ' (no limit)' : ' of ' + fmt(s.Limit))];
-            var per = Object.keys(s.PerProvider || {});
-            if (per.length) { parts.push(per.map(function (k) { return k + ' ' + fmt(s.PerProvider[k]); }).join(', ')); }
-            parts.push(s.RatesDate ? 'exchange rates from ' + s.RatesDate + (s.RatesFresh ? '' : ' (too old: paid providers in other currencies wait)') : 'no exchange rates yet (fetched from the European Central Bank when needed)');
-            if (s.PricesVersion) { parts.push('prices as of ' + s.PricesVersion); }
-            box.textContent = parts.join(' · ');
+            var html = '<div><strong>This month:</strong> ' + esc(s.Spent == null ? 'unknown' : money(s.Spent, s.Currency)) + (s.Limit == null ? ' (no limit)' : ' of ' + esc(money(s.Limit, s.Currency))) + '</div>';
+            if (s.Spent != null && s.Limit) {
+              var share = Math.min(1, s.Spent / s.Limit);
+              html += '<div class="ai-meter' + (share >= 0.8 ? ' ai-high' : '') + '" role="img" aria-label="' + Math.round(share * 100) + '% of the monthly limit used"><div style="width:' + (share * 100).toFixed(1) + '%"></div></div>';
+            }
+            if (s.Spent == null || (s.RatesDate && !s.RatesFresh)) {
+              html += '<div class="ai-warning">No current exchange rates: paid providers charging in other currencies wait until they can be fetched.</div>';
+            }
+            box.innerHTML = html;
+            sources.textContent = [
+              s.RatesDate ? 'Exchange rates from ' + s.RatesDate + (s.RatesFresh ? '' : ' (too old to use)') : 'No exchange rates yet (fetched when needed)',
+              s.PricesVersion ? 'prices as of ' + s.PricesVersion : ''
+            ].filter(Boolean).join(' · ') + '.';
+            if (config) { renderLimitsKeepingEdits(); }
           }, function () { box.textContent = ''; });
+        }
+
+        // Re-renders the limit rows (for the spending figures) without losing unsaved changes
+        function renderLimitsKeepingEdits() {
+          if (!page.querySelector('[data-limit]')) { return; }
+          config = fromPage();
+          renderLimits();
         }
 
         // What's left of each prepaid credit (this plugin's spending since the date, taken off the credit)
         function loadCredit() {
           return ApiClient.getJSON(ApiClient.getUrl('Ai/Credit')).then(function (list) {
-            Array.prototype.forEach.call(page.querySelectorAll('.p-credit-left'), function (e) { e.textContent = ''; });
+            Array.prototype.forEach.call(page.querySelectorAll('.p-credit-left'), function (e) { e.textContent = ''; e.removeAttribute('title'); });
             (list || []).forEach(function (c) {
               var box = page.querySelector('[data-provider="' + c.Provider + '"] .p-credit-left');
               if (!box) { return; }
-              box.textContent = c.Remaining == null
-                ? 'Credit left: unknown (spending in another currency needs current exchange rates).'
-                : 'Credit left: about ' + c.Currency + ' ' + Number(c.Remaining).toFixed(2) + ' (' + c.Currency + ' ' + Number(c.Credit).toFixed(2) + ' on ' + c.Since + ', less ' + c.Currency + ' ' + Number(c.Spent).toFixed(2) + ' spent by this plugin since). Use of the same key elsewhere isn\'t seen.';
+              if (c.Remaining == null) {
+                box.textContent = 'Credit left: unknown (needs current exchange rates)';
+                return;
+              }
+              box.textContent = 'Credit left: about ' + money(c.Remaining, c.Currency);
+              box.title = money(c.Credit, c.Currency) + ' on ' + c.Since + ', less ' + money(c.Spent, c.Currency) + ' spent by this plugin since. Use of the same key elsewhere isn\'t seen.';
             });
           }, function () {});
         }
@@ -295,46 +435,56 @@
           return ApiClient.getJSON(ApiClient.getUrl('Ai/Keys')).then(renderProviders).then(loadCredit);
         }
 
-        // Recent AI calls and the last error, newest first (never what was sent)
+        // Recent AI calls, a page at a time, newest first (never what was sent); the server words each row
         var clearArmed = null;
-        function money(amount, currency) {
-          return currency + ' ' + Number(amount).toFixed(amount > 0 && amount < 0.01 ? 4 : 2);
-        }
-        function callCost(c) {
-          if (c.Cost == null) { return c.Outcome === 'answered' ? 'unknown' : '–'; }
-          var own = money(c.Cost, c.CostCurrency);
-          return c.DisplayCost != null && c.DisplayCurrency !== c.CostCurrency ? money(c.DisplayCost, c.DisplayCurrency) + ' (' + own + ')' : own;
-        }
-        function callOutcome(c) {
-          if (c.Outcome === 'answered') { return 'Answered'; }
-          var what = c.Outcome === 'refused' ? 'Refused by limits' : 'Failed' + (c.Failure ? ' (' + c.Failure + ')' : '');
-          return what + (c.Error ? ': ' + c.Error : '');
-        }
-        function when(t) { var d = new Date(t); return isNaN(d) ? String(t) : d.toLocaleString(); }
-        function loadCalls() {
-          var caller = page.querySelector('#CallsCaller').value;
-          var url = ApiClient.getUrl('Ai/Calls', caller ? { limit: 100, caller: caller } : { limit: 100 });
-          return ApiClient.getJSON(url).then(function (v) {
-            var e = v.LastError;
-            page.querySelector('#LastError').innerHTML = e
-              ? '<div class="ai-error"><strong>Last error</strong> (' + esc(when(e.Time)) + ', ' + esc(e.Caller) + (e.Purpose ? ', ' + esc(e.Purpose) : '') + '): ' + esc(e.Error || callOutcome(e)) + '</div>'
-              : '';
-            var calls = v.Calls || [];
-            page.querySelector('#Calls').innerHTML = calls.length
-              ? '<table class="ai-calls"><thead><tr><th>Time</th><th>Caller</th><th>Purpose</th><th>Model</th><th>Outcome</th><th>Cost</th><th>Duration</th></tr></thead><tbody>' +
-                calls.map(function (c) {
-                  var tokens = c.InputTokens != null ? c.InputTokens + ' + ' + (c.OutputTokens || 0) + ' tokens' : '';
-                  var title = [tokens, c.SentBytes ? c.SentBytes + ' bytes sent' : '', c.Summary || ''].filter(Boolean).join(' · ');
-                  return '<tr title="' + esc(title) + '"><td>' + esc(when(c.Time)) + '</td><td>' + esc(c.Caller) + '</td><td>' + esc(c.Purpose) + '</td><td>' + esc(c.Model || '') + '</td>' +
-                    '<td>' + esc(callOutcome(c)) + (c.Summary ? '<div class="ai-muted">' + esc(c.Summary) + '</div>' : '') + '</td>' +
-                    '<td class="ai-num">' + esc(callCost(c)) + '</td><td class="ai-num">' + (Number(c.DurationMs) / 1000).toFixed(1) + ' s</td></tr>';
-                }).join('') + '</tbody></table>'
-              : '<p class="ai-muted">' + (v.Enabled ? 'No calls logged yet.' : 'The log is switched off.') + '</p>';
-          }, function () { page.querySelector('#Calls').innerHTML = ''; });
+        var nextCalls = null;
+
+        function callRow(c) {
+          var meta = [timeTag(c.Time), esc(c.Cost), esc(c.Duration)].filter(Boolean).join(' · ');
+          var details = (c.Details || []).map(function (d) { return '<dt>' + esc(d.Term) + '</dt><dd>' + esc(d.Value) + '</dd>'; }).join('');
+          return '<li><details class="ai-call"><summary>' +
+            '<span class="ai-caret" aria-hidden="true">▸</span>' +
+            '<span class="ai-chip" role="img" aria-label="' + esc(c.OutcomeLabel) + '" title="' + esc(c.OutcomeLabel) + '">' + esc(c.Icon) + '</span>' +
+            '<span>' + esc(c.Headline) + '</span>' +
+            '<span class="ai-when">' + meta + '</span>' +
+            '</summary><dl class="ai-details" aria-label="Details">' + details + '</dl></details></li>';
         }
 
-        page.querySelector('#CallsCaller').addEventListener('change', function (e) { e.stopPropagation(); loadCalls(); });
-        page.querySelector('#CallsRefresh').addEventListener('click', function () { loadCalls(); });
+        function detail(c, term) {
+          var d = (c.Details || []).filter(function (x) { return x.Term === term; })[0];
+          return d ? d.Value : '';
+        }
+
+        function loadCalls(more) {
+          var caller = page.querySelector('#CallsCaller').value;
+          var query = {};
+          if (caller) { query.caller = caller; }
+          if (more && nextCalls != null) { query.before = nextCalls; }
+          var button = page.querySelector('#CallsMore');
+          return ApiClient.getJSON(ApiClient.getUrl('Ai/Calls', query)).then(function (v) {
+            var e = v.LastError;
+            var message = e ? detail(e, 'Message') : '';
+            page.querySelector('#LastError').innerHTML = e
+              ? '<div class="ai-error"><strong>Last error</strong> ' + timeTag(e.Time) + ': ' + esc(e.Headline) + (message ? '. <span class="ai-muted">' + esc(message) + '</span>' : '') + '</div>'
+              : '';
+            var calls = v.Calls || [];
+            var box = page.querySelector('#Calls');
+            var list = box.querySelector('ul.ai-calls');
+            if (more && list) {
+              list.insertAdjacentHTML('beforeend', calls.map(callRow).join(''));
+            } else {
+              box.innerHTML = calls.length
+                ? '<ul class="ai-calls">' + calls.map(callRow).join('') + '</ul>'
+                : '<p class="ai-muted">' + (v.Enabled ? 'No calls logged yet.' : 'The log is switched off.') + '</p>';
+            }
+            nextCalls = v.Next == null ? null : v.Next;
+            button.style.display = nextCalls == null ? 'none' : '';
+          }, function () { if (!more) { page.querySelector('#Calls').innerHTML = ''; } });
+        }
+
+        page.querySelector('#CallsCaller').addEventListener('change', function (e) { e.stopPropagation(); loadCalls(false); });
+        page.querySelector('#CallsRefresh').addEventListener('click', function () { loadCalls(false); });
+        page.querySelector('#CallsMore').addEventListener('click', function () { loadCalls(true); });
         // Two clicks: the first asks, the second (within a few seconds) clears
         page.querySelector('#CallsClear').addEventListener('click', function () {
           var button = page.querySelector('#CallsClear');
@@ -347,7 +497,7 @@
           clearArmed = null;
           button.querySelector('span').textContent = 'Clear log';
           ApiClient.ajax({ type: 'DELETE', url: ApiClient.getUrl('Ai/Calls') })
-            .then(function () { say('Call log cleared.'); return loadCalls(); }, function (err) {
+            .then(function () { say('Call log cleared.'); return loadCalls(false); }, function (err) {
               return failureText(err, "The call log couldn't be cleared.").then(function (why) { say('Not cleared: ' + why); });
             });
         });
@@ -372,7 +522,7 @@
             var result = row.querySelector('.p-result');
             result.textContent = 'Testing…';
             ApiClient.ajax({ type: 'POST', url: ApiClient.getUrl('Ai/Test'), data: JSON.stringify({ Provider: id, Model: row.querySelector('.p-model').value.trim() }), contentType: 'application/json', dataType: 'json' })
-              .then(function (r) { result.textContent = (r.Ok ? '✓ ' : '✗ ') + r.Message; loadSpending(); loadCredit(); loadCalls(); }, function () { result.textContent = '✗ The test couldn\'t be run.'; });
+              .then(function (r) { result.textContent = (r.Ok ? '✓ ' : '✗ ') + r.Message; loadSpending(); loadCredit(); loadCalls(false); }, function () { result.textContent = '✗ The test couldn\'t be run.'; });
           } else if (e.target.closest('.p-clearkey')) {
             config = fromPage();
             ApiClient.ajax({ type: 'DELETE', url: ApiClient.getUrl('Ai/Keys/' + id) })
@@ -385,7 +535,7 @@
         page.addEventListener('pageshow', function () {
           Dashboard.showLoadingMsg();
           ApiClient.getPluginConfiguration(pluginId).then(function (c) {
-            config = c;
+            config = null;
             page.querySelector('#Enabled').checked = c.Enabled;
             page.querySelector('#AllowIngest').checked = c.AllowIngest;
             page.querySelector('#AllowSubtitles').checked = c.AllowSubtitles;
@@ -394,13 +544,13 @@
             page.querySelector('#NoOverallLimit').checked = !!c.NoOverallLimit;
             page.querySelector('#ExtraChargesPercent').value = c.ExtraChargesPercent || 0;
             // The spending reply carries the currency list, so it's read before the lists are filled
-            return loadSpending();
-          }).then(function () {
-            var c = config;
+            return loadSpending().then(function () { return c; });
+          }).then(function (c) {
+            config = c;
             page.querySelector('#Currency').innerHTML = currencies.map(function (x) { return '<option value="' + x + '">' + x + '</option>'; }).join('');
             page.querySelector('#Currency').value = currencies.indexOf(c.Currency) >= 0 ? c.Currency : 'USD';
             return loadKeys();
-          }).then(function () { refresh(); loadCalls(); Dashboard.hideLoadingMsg(); });
+          }).then(function () { refresh(); loadCalls(false); Dashboard.hideLoadingMsg(); });
         });
 
         page.querySelector('#AiConfigForm').addEventListener('submit', function (e) {
@@ -415,7 +565,7 @@
               Dashboard.alert('Not saved: ' + errors.map(function (m) { return m.Message; }).join(' '));
               return;
             }
-            ApiClient.updatePluginConfiguration(pluginId, c).then(function (r) { config = c; Dashboard.processPluginConfigurationUpdateResult(r); loadCredit(); loadCalls(); });
+            ApiClient.updatePluginConfiguration(pluginId, c).then(function (r) { config = c; Dashboard.processPluginConfigurationUpdateResult(r); loadSpending(); loadCredit(); loadCalls(false); });
           });
           return false;
         });
