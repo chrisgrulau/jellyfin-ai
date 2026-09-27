@@ -5,6 +5,8 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.5.0-alpha] - 2026-09-27
+
 ### Added
 
 - **One budget page:** the currency, the overall monthly limit and a limit per provider for every paid service in the
