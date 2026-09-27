@@ -26,6 +26,18 @@
       #AiConfigPage .ai-button-row { display: flex; flex-wrap: wrap; justify-content: center; gap: .5em 1em; margin: 1em 0; }
       #AiConfigPage .ai-button-row > .emby-button, #AiConfigPage .emby-button.block { display: inline-flex; justify-content: center; width: auto; min-width: 12em; max-width: 20em; margin: 0; }
       #AiConfigPage .ai-button-row > .emby-button.block { flex: 0 1 16em; }
+      /* In-progress feedback on buttons that call the server: a small spinner in the text colour (a still "…" when motion
+         is reduced), then the outcome next to the buttons */
+      #AiConfigPage .ai-spinner { display: inline-block; width: .85em; height: .85em; margin-right: .45em; vertical-align: -.1em; box-sizing: border-box; border: 2px solid currentColor; border-right-color: transparent; border-radius: 50%; animation: ai-spin .8s linear infinite; }
+      @keyframes ai-spin { to { transform: rotate(360deg); } }
+      @media (prefers-reduced-motion: reduce) { #AiConfigPage .ai-spinner { display: none; } }
+      #AiConfigPage .emby-button.ai-busy { cursor: progress; }
+      #AiConfigPage .emby-button.ai-busy[disabled] { opacity: .85; }
+      #AiConfigPage .ai-outcome { margin: .3em 0; font-size: .9em; }
+      #AiConfigPage .ai-outcome.ai-bad { padding: .3em .6em; border-radius: 4px; background: rgba(220,50,50,.18); border-left: 3px solid rgba(220,50,50,.9); }
+      #AiConfigPage .ai-button-row + .ai-outcome { text-align: center; }
+      /* Read out, not shown: the page's status announcements */
+      #AiConfigPage .ai-sr { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
 
       /* Sections: the common ones open, the rest closed */
       #AiConfigPage details.ai-section { border-top: 1px solid var(--ai-line); padding: .4em 0 .8em; }
@@ -121,7 +133,7 @@
             <summary>Providers and keys</summary>
             <div id="Providers"></div>
             <div id="ProvidersLater" class="ai-muted" style="margin:.5em 0"></div>
-            <div id="AiStatus" class="ai-muted" role="status" aria-live="polite" style="margin:.5em 0"></div>
+            <div id="AiStatus" class="ai-sr" role="status" aria-live="polite"></div>
             <details class="ai-help">
               <summary>About keys, models and the Test button</summary>
               <div>
@@ -186,7 +198,7 @@
           <details class="ai-section" open>
             <summary>Recent calls</summary>
             <div id="LastError" role="status" aria-live="polite"></div>
-            <div class="ai-calls-bar">
+            <div class="ai-calls-bar" id="CallsBar">
               <div class="selectContainer">
                 <label class="selectLabel" for="CallsCaller">Show calls from</label>
                 <select is="emby-select" id="CallsCaller">
@@ -200,8 +212,10 @@
               <button is="emby-button" type="button" class="raised" id="CallsRefresh"><span>Refresh</span></button>
               <button is="emby-button" type="button" class="raised button-alt" id="CallsClear"><span>Clear log</span></button>
             </div>
+            <div class="ai-outcome" data-outcome-for="CallsBar" hidden></div>
             <div id="Calls"></div>
-            <div class="ai-button-row" style="margin:.5em 0"><button is="emby-button" type="button" class="raised" id="CallsMore" style="display:none"><span>Show more</span></button></div>
+            <div class="ai-button-row" id="CallsMoreRow" style="margin:.5em 0"><button is="emby-button" type="button" class="raised" id="CallsMore" hidden><span>Show more</span></button></div>
+            <div class="ai-outcome" data-outcome-for="CallsMoreRow" hidden></div>
             <div class="checkboxContainer" style="margin:1em 0 0">
               <label class="emby-checkbox-label">
                 <input id="KeepCallLog" type="checkbox" is="emby-checkbox" />
@@ -216,9 +230,10 @@
             </details>
           </details>
 
-          <div class="ai-button-row" style="margin-top:1.5em">
+          <div class="ai-button-row" id="SaveRow" style="margin-top:1.5em">
             <button is="emby-button" type="submit" class="raised button-submit block emby-button"><span>Save</span></button>
           </div>
+          <div class="ai-outcome" data-outcome-for="SaveRow" hidden></div>
         </form>
       </div>
     </div>
@@ -248,8 +263,60 @@
         var checkTimer = null;
         var spending = null;
 
-        // Announced to screen readers as well as shown (FAM-07)
+        // Announced to screen readers (FAM-07); what happened is also shown next to the buttons
         function say(text) { page.querySelector('#AiStatus').textContent = text || ''; }
+
+        // ---- In-progress feedback: busy(button, label) disables the button and the other actions in its group, shows a
+        // spinner and the label, and returns done(ok, message), which puts things back and shows the outcome next to the
+        // buttons: a success for a few seconds, a problem until the group's next action. Outcomes survive re-rendering ----
+        var outcomes = {};
+        function groupOf(b) { return b.closest('[data-provider], .ai-calls-bar, .ai-button-row') || b.parentNode; }
+        function groupKey(g) { return g.hasAttribute('data-provider') ? '[data-provider="' + g.getAttribute('data-provider') + '"]' : '#' + g.id; }
+        function slotOf(g) { return g.hasAttribute('data-provider') ? g.querySelector('.p-result') : page.querySelector('[data-outcome-for="' + g.id + '"]'); }
+        function placeOutcomes() {
+          Object.keys(outcomes).forEach(function (k) {
+            var g = page.querySelector(k);
+            var slot = g && slotOf(g);
+            if (!slot) { return; }
+            var o = outcomes[k];
+            slot.textContent = o ? o.msg : '';
+            slot.classList.toggle('ai-bad', !!o && !o.ok);
+            slot.hidden = !o;
+            if (!o) { delete outcomes[k]; }
+          });
+        }
+        function showOutcome(g, ok, msg) {
+          var key = groupKey(g);
+          var o = msg ? { ok: ok, msg: msg } : null;
+          outcomes[key] = o;
+          if (o && ok) { setTimeout(function () { if (outcomes[key] === o) { outcomes[key] = null; placeOutcomes(); } }, 8000); }
+          placeOutcomes();
+          if (msg) { say(msg); }
+        }
+        function busy(b, label) {
+          var g = groupOf(b);
+          showOutcome(g, true, '');
+          var others = [];
+          Array.prototype.forEach.call(g.querySelectorAll('button'), function (x) { if (!x.disabled) { x.disabled = true; others.push(x); } });
+          if (!b.disabled) { b.disabled = true; others.push(b); }
+          g.setAttribute('aria-busy', 'true');
+          var span = b.querySelector('span') || b;
+          var before = span.innerHTML;
+          span.innerHTML = '<span class="ai-spinner" aria-hidden="true"></span>' + esc(label);
+          b.classList.add('ai-busy');
+          say(label);
+          var finished = false;
+          return function done(ok, msg) {
+            if (finished) { return; }
+            finished = true;
+            span.innerHTML = before;
+            b.classList.remove('ai-busy');
+            others.forEach(function (x) { x.disabled = false; });
+            g.removeAttribute('aria-busy');
+            // The group may have been drawn again meanwhile: the outcome goes to whichever copy is on the page now
+            showOutcome(page.querySelector(groupKey(g)) || g, ok, msg);
+          };
+        }
 
         // The server's own reason for a failed call: a plain or JSON-quoted string, or a problem's detail or title
         function failureText(err, fallback) {
@@ -321,13 +388,14 @@
               '<button is="emby-button" type="button" class="raised p-savekey"><span>Save key</span></button>' +
               (set ? '<button is="emby-button" type="button" class="raised button-alt p-clearkey"><span>Clear</span></button>' : '') +
               '<button is="emby-button" type="button" class="raised p-test"><span>Test</span></button></div>' +
-              '<div class="p-result ai-muted" aria-live="polite"></div>' +
+              '<div class="p-result ai-outcome" hidden></div>' +
               '<div class="p-credit-left ai-muted"></div>' +
               '<details class="ai-sub"><summary>Model' + (p[0] === 'openai-compatible' ? ' and address' : ' and prepaid credit') + (v.Model ? ': ' + esc(v.Model) : '') + '</summary>' +
               '<div class="inputContainer"><label class="inputLabel inputLabelUnfocused" for="' + f + 'model">Model</label><input is="emby-input" type="text" class="p-model" id="' + f + 'model" value="' + esc(v.Model) + '" placeholder="' + esc(p[2]) + '" /></div>' +
               url + credit + '</details>' +
               '</div>';
           }).join('');
+          placeOutcomes();
           renderLimits();
         }
 
@@ -516,13 +584,23 @@
                 : '<p class="ai-muted">' + (v.Enabled ? 'No calls logged yet.' : 'The log is switched off.') + '</p>';
             }
             nextCalls = v.Next == null ? null : v.Next;
-            button.style.display = nextCalls == null ? 'none' : '';
-          }, function () { if (!more) { page.querySelector('#Calls').innerHTML = ''; } });
+            button.hidden = nextCalls == null;
+            return null;
+          }, function (err) {
+            if (!more) { page.querySelector('#Calls').innerHTML = ''; }
+            return failureText(err, "The calls couldn't be read.");
+          });
         }
 
         page.querySelector('#CallsCaller').addEventListener('change', function (e) { e.stopPropagation(); loadCalls(false); });
-        page.querySelector('#CallsRefresh').addEventListener('click', function () { loadCalls(false); });
-        page.querySelector('#CallsMore').addEventListener('click', function () { loadCalls(true); });
+        page.querySelector('#CallsRefresh').addEventListener('click', function () {
+          var done = busy(page.querySelector('#CallsRefresh'), 'Refreshing…');
+          loadCalls(false).then(function (why) { done(!why, why ? 'Not refreshed: ' + why : 'Up to date.'); });
+        });
+        page.querySelector('#CallsMore').addEventListener('click', function () {
+          var done = busy(page.querySelector('#CallsMore'), 'Loading…');
+          loadCalls(true).then(function (why) { done(!why, why ? 'No more shown: ' + why : ''); });
+        });
         // Two clicks: the first asks, the second (within a few seconds) clears
         page.querySelector('#CallsClear').addEventListener('click', function () {
           var button = page.querySelector('#CallsClear');
@@ -534,9 +612,10 @@
           clearTimeout(clearArmed);
           clearArmed = null;
           button.querySelector('span').textContent = 'Clear log';
+          var done = busy(button, 'Clearing…');
           ApiClient.ajax({ type: 'DELETE', url: ApiClient.getUrl('Ai/Calls') })
-            .then(function () { say('Call log cleared.'); return loadCalls(false); }, function (err) {
-              return failureText(err, "The call log couldn't be cleared.").then(function (why) { say('Not cleared: ' + why); });
+            .then(function () { return loadCalls(false).then(function () { done(true, 'Call log cleared.'); }); }, function (err) {
+              return failureText(err, "The call log couldn't be cleared.").then(function (why) { done(false, 'Not cleared: ' + why); });
             });
         });
 
@@ -546,26 +625,29 @@
           var row = e.target.closest('[data-provider]');
           if (!row) { return; }
           var id = row.getAttribute('data-provider');
+          var done;
           if (e.target.closest('.p-savekey')) {
             var key = row.querySelector('.p-key').value.trim();
-            if (!key) { say('Paste the key first.'); return; }
+            if (!key) { showOutcome(row, false, 'Paste the key first.'); return; }
             config = fromPage();
-            say('Saving the key…');
+            done = busy(e.target.closest('.p-savekey'), 'Saving…');
             ApiClient.ajax({ type: 'PUT', url: ApiClient.getUrl('Ai/Keys/' + id), data: JSON.stringify({ Key: key }), contentType: 'application/json' })
-              .then(function () { say('Key saved.'); return loadKeys(); }, function (err) {
+              .then(function () { done(true, 'Key saved.'); return loadKeys(); }, function (err) {
                 // The server says why: a malformed key (400), or for example a data folder it can't write (500)
-                return failureText(err, "The key couldn't be saved.").then(function (why) { say('Not saved: ' + why); Dashboard.alert('Not saved: ' + why); });
+                return failureText(err, "The key couldn't be saved.").then(function (why) { done(false, 'Not saved: ' + why); });
               });
           } else if (e.target.closest('.p-test')) {
-            var result = row.querySelector('.p-result');
-            result.textContent = 'Testing…';
+            done = busy(e.target.closest('.p-test'), 'Testing…');
             ApiClient.ajax({ type: 'POST', url: ApiClient.getUrl('Ai/Test'), data: JSON.stringify({ Provider: id, Model: row.querySelector('.p-model').value.trim() }), contentType: 'application/json', dataType: 'json' })
-              .then(function (r) { result.textContent = (r.Ok ? '✓ ' : '✗ ') + r.Message; loadSpending(); loadCredit(); loadCalls(false); }, function () { result.textContent = '✗ The test couldn\'t be run.'; });
+              .then(function (r) { done(!!r.Ok, (r.Ok ? '✓ ' : '✗ ') + r.Message); loadSpending(); loadCredit(); loadCalls(false); }, function (err) {
+                return failureText(err, "The test couldn't be run.").then(function (why) { done(false, '✗ ' + why); });
+              });
           } else if (e.target.closest('.p-clearkey')) {
             config = fromPage();
+            done = busy(e.target.closest('.p-clearkey'), 'Clearing…');
             ApiClient.ajax({ type: 'DELETE', url: ApiClient.getUrl('Ai/Keys/' + id) })
-              .then(function () { say('Key cleared.'); return loadKeys(); }, function (err) {
-                return failureText(err, "The key couldn't be cleared.").then(function (why) { say('Not cleared: ' + why); });
+              .then(function () { done(true, 'Key cleared.'); return loadKeys(); }, function (err) {
+                return failureText(err, "The key couldn't be cleared.").then(function (why) { done(false, 'Not cleared: ' + why); });
               });
           }
         });
@@ -595,16 +677,24 @@
         page.querySelector('#AiConfigForm').addEventListener('submit', function (e) {
           e.preventDefault();
           var c = fromPage();
-          Dashboard.showLoadingMsg();
+          var done = busy(page.querySelector('#SaveRow button[type="submit"]'), 'Saving…');
           check(c).then(function (messages) {
             showMessages(messages);
             var errors = (messages || []).filter(function (m) { return m.Severity === 'Error'; });
             if (errors.length) {
-              Dashboard.hideLoadingMsg();
-              Dashboard.alert('Not saved: ' + errors.map(function (m) { return m.Message; }).join(' '));
-              return;
+              var why = 'Not saved: ' + errors.map(function (m) { return m.Message; }).join(' ');
+              done(false, why);
+              Dashboard.alert(why);
+              return null;
             }
-            ApiClient.updatePluginConfiguration(pluginId, c).then(function (r) { config = c; Dashboard.processPluginConfigurationUpdateResult(r); loadSpending(); loadCredit(); loadCalls(false); });
+            return ApiClient.updatePluginConfiguration(pluginId, c).then(function (r) {
+              config = c;
+              Dashboard.processPluginConfigurationUpdateResult(r);
+              done(true, 'Saved.');
+              loadSpending(); loadCredit(); loadCalls(false);
+            });
+          }).catch(function (err) {
+            return failureText(err, "The settings couldn't be saved.").then(function (why) { done(false, 'Not saved: ' + why); });
           });
           return false;
         });
