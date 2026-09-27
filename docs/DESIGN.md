@@ -28,8 +28,12 @@ retired by the provider.
 
 ## Spending limits (COM-02)
 
-- **One owner per budget.** When this plugin is installed it owns the ledger for AI providers used by several plugins;
-  the others ask it rather than keep their own copy. Without it, each plugin owns its own.
+- **One budget page.** When this plugin is installed it owns the family's budget: the currency, the overall limit and a
+  limit per provider for every paid service, Claude and Shoal Subtitles' paid speech-to-text (Deepgram and OpenAI,
+  named `deepgram` and `openai-speech` here, apart from OpenAI's text models). Subtitles meters those calls on this
+  plugin's ledger through the spending entry point (below) and hides its own spending settings; its keys stay with it.
+  Without this plugin, or with **Allow Subtitles to use this budget for paid speech-to-text** off, Subtitles uses its
+  own ledger and settings, as before.
 - **Overall limit** for all paid providers together, per month, in the user's currency: 5 by default; 0 means no paid
   use; "no limit" is an explicit choice with a warning.
 - **Per-provider limits** (optional), each either an amount or a percentage of the overall limit, mixed freely across
@@ -48,6 +52,35 @@ retired by the provider.
 - **Prices** come from the response where the provider gives them, else the provider's usage API, else a price table
   shipped in the plugin (validated; pinned by version). If prices can't be loaded, they are unknown and paid calls stop;
   never assume zero.
+
+## Spending entry point
+
+`Jellyfin.Plugin.Ai.Bridge.SpendingBridge.HandleAsync(string, CancellationToken)`, found by the callers through
+common's `SpendingBridgeClient` (which declares the contract, version 1; see common's *Spending entry point* notes). It
+forwards to the shared `AiSpending` attached at start-up by `AiBridgeHost`, like `AiBridge`.
+
+- **Operations:** `reserve` (purpose, provider, estimate as `{amount, currency}`) returns a `reservationId`, or
+  `provider-limit` with the ledger's reason; `settle` (reservation, actual) and `release` (reservation); `carry`
+  (Subtitles' own spending this month with one provider in one currency, replacing what it reported before, so the month
+  counts it once); `summary` (currency, overall limit, this month's spending overall and per provider, each provider's
+  limit, the rates' date and freshness), which the Subtitles page shows instead of its own settings.
+- **Prices:** the caller prices its calls with its own price table (this plugin has no speech prices); the estimate and
+  the actual cost are converted here with this plugin's exchange rates, refreshed when due before each reservation, and
+  checked against the overall limit and the provider's own limit. The call log isn't used for speech: the ledger is
+  enough.
+- **Checks:** the version (`unsupported-version`); the caller, only `subtitles`, while
+  `PluginConfiguration.AllowSubtitlesSpending` is on (on by default, since only amounts are exchanged: `not-allowed`
+  otherwise, and Subtitles then uses its own budget); a speech-to-text provider (`KnownProviders.Speech`); a purpose
+  that is a short identifier (`subtitles.sync`, or `ingest.episode` when Subtitles transcribes for Ingest); amounts 0
+  to 100,000 in a supported currency; a carry for the current month only. The plugin's **Enabled** switch doesn't
+  apply: it is about answering AI requests, and the budget is kept either way.
+- **Owned reservations:** each reservation records its caller, who alone can settle or release it. One left open for an
+  hour is settled at its estimate (the caller stopped mid-call); a late settle or release is refused (`bad-request`)
+  and changes nothing.
+- **Settings page:** the speech providers are listed as limit rows (spending this month, amount or share of the overall
+  limit) while Subtitles is installed, or once they have spending or a limit (`SpendingSummary.SpeechProviders`). They
+  have no key, model or test here. They are kept in `Providers` after the AI providers; `BudgetRules` checks that a
+  percentage has an overall limit and adds their limits up with the others, but doesn't warn that they are unlimited.
 
 ## Safety (AI-01)
 

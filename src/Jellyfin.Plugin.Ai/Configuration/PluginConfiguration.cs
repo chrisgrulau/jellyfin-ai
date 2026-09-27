@@ -29,7 +29,18 @@ public class PluginConfiguration : BasePluginConfiguration
     /// </summary>
     public bool AllowSubtitles { get; set; }
 
-    /// <summary>Gets or sets the providers: one entry per known provider, in the fixed order of <see cref="KnownProviders.All"/>.</summary>
+    /// <summary>
+    /// Gets or sets a value indicating whether Subtitles keeps its paid speech-to-text (Deepgram, OpenAI) within this
+    /// plugin's spending limits: it reserves and records each call on this plugin's ledger, and its own spending settings
+    /// are then hidden. Only amounts are exchanged, never audio or text, so it is on by default. When off (or without this
+    /// plugin), Subtitles uses its own currency and limit.
+    /// </summary>
+    public bool AllowSubtitlesSpending { get; set; } = true;
+
+    /// <summary>
+    /// Gets or sets the providers: one entry per known provider, in the fixed order of <see cref="KnownProviders.All"/>,
+    /// then one per speech-to-text provider (<see cref="KnownProviders.Speech"/>), which only has a spending limit.
+    /// </summary>
     [SuppressMessage("Usage", "CA2227:Collection properties should be read only", Justification = "Jellyfin deserializes plugin configuration from JSON, which cannot populate a get-only collection.")]
     public Collection<ProviderSettings> Providers { get; set; } = [];
 

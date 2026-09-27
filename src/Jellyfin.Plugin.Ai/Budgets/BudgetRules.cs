@@ -47,13 +47,13 @@ public static class BudgetRules
         config.ExtraChargesPercent = Math.Clamp(config.ExtraChargesPercent, 0m, Common.Costs.CostConverter.MaxExtraPercent);
 
         var byId = new Dictionary<string, ProviderSettings>(StringComparer.Ordinal);
-        foreach (var p in config.Providers.Where(p => p is not null && KnownProviders.IsKnown(p.Id)))
+        foreach (var p in config.Providers.Where(p => p is not null && (KnownProviders.IsKnown(p.Id) || KnownProviders.IsSpeech(p.Id))))
         {
             byId.TryAdd(p.Id, p);
         }
 
         config.Providers.Clear();
-        foreach (var id in KnownProviders.All)
+        foreach (var id in KnownProviders.All.Concat(KnownProviders.Speech))
         {
             var p = byId.TryGetValue(id, out var existing) ? existing : KnownProviders.Default(id);
             p.Model = (p.Model ?? string.Empty).Trim();
@@ -109,7 +109,10 @@ public static class BudgetRules
         var paid = config.Providers.Where(p => p is { Enabled: true } && available(p.Id) && !IsLocal(p)).ToList();
         string Money(decimal amount) => config.Currency + " " + amount.ToString("0.00", CultureInfo.InvariantCulture);
 
-        foreach (var p in paid.Where(p => p.BudgetMode == ProviderBudgetMode.PercentOfOverall && overall is null))
+        // Speech-to-text providers are used by Subtitles, which this plugin can't see from here: their own limits count, but
+        // they aren't warned about as unlimited or as sharing the overall limit
+        var speech = config.Providers.Where(p => p is not null && KnownProviders.IsSpeech(p.Id)).ToList();
+        foreach (var p in paid.Concat(speech).Where(p => p.BudgetMode == ProviderBudgetMode.PercentOfOverall && overall is null))
         {
             messages.Add(new BudgetMessage(BudgetSeverity.Error, $"{Name(p)}: a percentage needs an overall limit. Set one, or give {Name(p)} an amount."));
         }
@@ -128,7 +131,7 @@ public static class BudgetRules
                 messages.Add(new BudgetMessage(BudgetSeverity.Warning, "Only the overall limit is set: one provider running over could use it all and stop the others. Consider a limit for each provider."));
             }
 
-            var sum = own.OfType<decimal>().Sum();
+            var sum = own.Concat(speech.Select(p => ProviderLimit(p, overall))).OfType<decimal>().Sum();
             if (sum > o)
             {
                 messages.Add(new BudgetMessage(BudgetSeverity.Warning, $"The providers' own limits add up to {Money(sum)}, more than the overall {Money(o)}: the overall limit will stop spending first."));
@@ -148,6 +151,8 @@ public static class BudgetRules
         KnownProviders.Anthropic => "Anthropic",
         KnownProviders.OpenAi => "OpenAI",
         KnownProviders.Google => "Google",
+        KnownProviders.Deepgram => "Deepgram speech-to-text",
+        KnownProviders.OpenAiSpeech => "OpenAI speech-to-text",
         _ => "OpenAI-compatible service",
     };
 }
