@@ -14,6 +14,18 @@
       #AiConfigPage .ai-warning { padding: .6em .9em; border-radius: 4px; margin: .5em 0; background: rgba(255,170,0,.15); border-left: 4px solid rgba(255,170,0,.8); }
       #AiConfigPage .ai-error { padding: .6em .9em; border-radius: 4px; margin: .5em 0; background: rgba(220,50,50,.18); border-left: 4px solid rgba(220,50,50,.9); }
 
+      /* Full width: Jellyfin caps every form (and .readOnlyContent) at 54em from 50em up; this page uses the whole content area.
+         Help text keeps a comfortable reading width; inputs, lists and tables stretch. */
+      #AiConfigPage .content-primary { max-width: none; box-sizing: border-box; }
+      #AiConfigPage form, #AiConfigPage .readOnlyContent { max-width: none; }
+      #AiConfigPage p, #AiConfigPage .fieldDescription { max-width: 80ch; }
+      @media (min-width: 80em) { #AiConfigPage .content-primary { padding-left: 2em; padding-right: 2em; } }
+      /* Primary actions are centred at a reasonable width (a group sits centred as a row); row actions stay compact */
+      #AiConfigPage .ai-button-row { display: flex; flex-wrap: wrap; justify-content: center; gap: .5em 1em; margin: 1em 0; }
+      #AiConfigPage .ai-button-row > .emby-button, #AiConfigPage .emby-button.block { display: inline-flex; justify-content: center; width: auto; min-width: 12em; max-width: 20em; margin: 0; }
+      #AiConfigPage .ai-button-row > .emby-button.block { flex: 0 1 16em; }
+      #AiConfigPage .ai-button-row > [hidden] { display: none; }
+
       /* Sections: the common ones open, the rest closed */
       #AiConfigPage details.ai-section { border-top: 1px solid var(--ai-line); padding: .4em 0 .8em; }
       #AiConfigPage details.ai-section > summary { cursor: pointer; font-size: 1.25em; padding: .5em 0; }
@@ -188,7 +200,7 @@
               <button is="emby-button" type="button" class="raised button-alt" id="CallsClear"><span>Clear log</span></button>
             </div>
             <div id="Calls"></div>
-            <div style="margin:.5em 0"><button is="emby-button" type="button" class="raised" id="CallsMore" style="display:none"><span>Show more</span></button></div>
+            <div class="ai-button-row" style="margin:.5em 0"><button is="emby-button" type="button" class="raised" id="CallsMore" style="display:none"><span>Show more</span></button></div>
             <div class="checkboxContainer" style="margin:1em 0 0">
               <label class="emby-checkbox-label">
                 <input id="KeepCallLog" type="checkbox" is="emby-checkbox" />
@@ -203,7 +215,7 @@
             </details>
           </details>
 
-          <div style="margin-top:1.5em">
+          <div class="ai-button-row" style="margin-top:1.5em">
             <button is="emby-button" type="submit" class="raised button-submit block emby-button"><span>Save</span></button>
           </div>
         </form>
