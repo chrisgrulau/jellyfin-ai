@@ -5,6 +5,13 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Changed
+
+- **Buttons show progress while they work.** Save, Save key, Clear, Test, Refresh, Clear log and Show more are
+  disabled while they run, with a small spinner and a label such as "Saving…" or "Testing…" (a still "…" when reduced
+  motion is set), and the outcome is shown next to them afterwards: a success for a few seconds, a problem until the
+  next try. Screen readers hear both.
+
 ## [0.5.2-alpha] - 2026-09-27
 
 ### Fixed
