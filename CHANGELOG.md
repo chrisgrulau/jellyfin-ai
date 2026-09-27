@@ -5,6 +5,11 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- The settings page always honours the `hidden` attribute, even on elements whose own style sets how they are laid
+  out (a safeguard; nothing on the page is known to have been affected).
+
 ## [0.5.1-alpha] - 2026-09-27
 
 ### Changed
