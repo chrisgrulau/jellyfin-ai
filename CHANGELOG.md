@@ -5,6 +5,8 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.5.3-alpha] - 2026-09-27
+
 ### Changed
 
 - **Buttons show progress while they work.** Save, Save key, Clear, Test, Refresh, Clear log and Show more are
