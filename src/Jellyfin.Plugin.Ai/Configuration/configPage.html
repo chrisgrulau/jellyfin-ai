@@ -9,6 +9,8 @@
     <style>
       /* Colours are tints over the theme's own text and background, so they read in the light and dark themes (FAM-07) */
       #AiConfigPage { --ai-line: rgba(128,128,128,.25); --ai-tint: rgba(128,128,128,.1); --ai-accent: rgba(0,164,220,.85); }
+      /* [hidden] always wins over rules that set display (emby-buttons are inline-flex), should anything use it */
+      #AiConfigPage [hidden] { display: none !important; }
       #AiConfigPage .ai-muted { opacity: .75; font-size: .9em; }
       #AiConfigPage .ai-set { font-weight: 600; }
       #AiConfigPage .ai-warning { padding: .6em .9em; border-radius: 4px; margin: .5em 0; background: rgba(255,170,0,.15); border-left: 4px solid rgba(255,170,0,.8); }
@@ -24,7 +26,6 @@
       #AiConfigPage .ai-button-row { display: flex; flex-wrap: wrap; justify-content: center; gap: .5em 1em; margin: 1em 0; }
       #AiConfigPage .ai-button-row > .emby-button, #AiConfigPage .emby-button.block { display: inline-flex; justify-content: center; width: auto; min-width: 12em; max-width: 20em; margin: 0; }
       #AiConfigPage .ai-button-row > .emby-button.block { flex: 0 1 16em; }
-      #AiConfigPage .ai-button-row > [hidden] { display: none; }
 
       /* Sections: the common ones open, the rest closed */
       #AiConfigPage details.ai-section { border-top: 1px solid var(--ai-line); padding: .4em 0 .8em; }
