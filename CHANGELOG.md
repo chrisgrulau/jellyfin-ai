@@ -5,6 +5,14 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Changed
+
+- **UI:** `GET Ai/Calls` returns a page of calls (15 by default) with a `Next` cursor to pass as `before` for the next
+  page; calls recorded while the list is open don't shift the pages, and the caller filter applies across them. Each
+  call comes presented for the settings page: a headline ("Ingest asked which film or show this is — answered"), an
+  outcome icon and label, compact cost and duration, and its technical details (model, tokens, bytes sent, failure
+  class, answer shape, cost in the provider's currency) as a list of terms.
+
 ## [0.4.0-alpha] - 2026-09-27
 
 ### Added

@@ -238,9 +238,65 @@ public sealed class CallLogTests : IDisposable
         Assert.Single(log.Recent(0, null));
         Assert.Empty(log.Recent(10, "nobody"));
 
-        var view = log.View(10, "subtitles", enabled: true);
+        var view = log.View(10, null, "subtitles", enabled: true);
         Assert.True(view.Enabled);
         Assert.Equal("subtitles", Assert.Single(view.Calls).Caller);
+    }
+
+    [Fact]
+    public void Calls_are_paged_with_a_cursor_that_new_calls_do_not_shift()
+    {
+        var log = Log();
+        var t = _clock.Now;
+        for (var i = 1; i <= 7; i++)
+        {
+            log.Record(Entry(t.AddMinutes(i), i % 2 == 0 ? "subtitles" : "ingest"));
+        }
+
+        var first = log.View(3, null, null, enabled: true);
+        Assert.Equal(new[] { 7, 6, 5 }, first.Calls.Select(c => (c.Time - t).Minutes));
+        Assert.NotNull(first.Next);
+
+        // A call recorded while the list is open doesn't repeat or skip any on the next page
+        log.Record(Entry(t.AddMinutes(8), "ingest"));
+        var second = log.View(3, first.Next, null, enabled: true);
+        Assert.Equal(new[] { 4, 3, 2 }, second.Calls.Select(c => (c.Time - t).Minutes));
+        var last = log.View(3, second.Next, null, enabled: true);
+        Assert.Equal(new[] { 1 }, last.Calls.Select(c => (c.Time - t).Minutes));
+        Assert.Null(last.Next);
+
+        // Exactly a page left: no cursor for an empty page after it
+        Assert.Null(log.View(2, second.Next, "ingest", enabled: true).Next);
+
+        // The caller filter applies across pages
+        var ingest = log.View(2, null, "ingest", enabled: true);
+        Assert.Equal(new[] { 8, 7 }, ingest.Calls.Select(c => (c.Time - t).Minutes));
+        Assert.Equal(new[] { 5, 3 }, log.View(2, ingest.Next, "ingest", enabled: true).Calls.Select(c => (c.Time - t).Minutes));
+
+        // Presented, with the page size by default
+        Assert.Equal(CallPresenter.AnsweredIcon, ingest.Calls[0].Icon);
+        Assert.Equal(8, log.View(CallLog.PageSize, null, null, enabled: true).Calls.Count);
+    }
+
+    [Fact]
+    public void Paging_survives_a_trim_and_a_restart()
+    {
+        var log = Log();
+        var t = _clock.Now;
+        for (var i = 1; i <= 5; i++)
+        {
+            log.Record(Entry(t.AddMinutes(i)));
+        }
+
+        var first = log.View(2, null, null, enabled: true);
+        log.Trim();
+        Assert.Equal(new[] { 3, 2 }, log.View(2, first.Next, null, enabled: true).Calls.Select(c => (c.Time - t).Minutes));
+
+        // After a restart the log is read again in the same order
+        var again = Log();
+        var page = again.View(2, null, null, enabled: true);
+        Assert.Equal(new[] { 5, 4 }, page.Calls.Select(c => (c.Time - t).Minutes));
+        Assert.Equal(new[] { 3, 2 }, again.View(2, page.Next, null, enabled: true).Calls.Select(c => (c.Time - t).Minutes));
     }
 
     [Fact]
@@ -253,7 +309,7 @@ public sealed class CallLogTests : IDisposable
 
         log.Record(Entry(t.AddMinutes(1), "subtitles", CallEntry.Failed));
         Assert.Equal("subtitles", log.LastError()!.Caller);
-        Assert.Equal("subtitles", log.View(10, "ingest", enabled: true).LastError!.Caller);
+        Assert.Equal("subtitles", log.View(10, null, "ingest", enabled: true).LastError!.Caller);
 
         log.Record(Entry(t.AddMinutes(2), "ingest"));
         Assert.Null(log.LastError());
