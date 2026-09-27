@@ -5,6 +5,13 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Changed
+
+- **Settings pages use the full width; buttons are centred.** The settings sections, provider rows, limits and the
+  recent-calls list now use the whole page area instead of stopping at about half a wide screen (help text keeps a
+  comfortable reading width). *Save* and *Show more* are centred at a sensible width instead of stretching across the
+  page; buttons inside rows (*Save key*, *Test*, *Refresh*) stay compact.
+
 ## [0.5.0-alpha] - 2026-09-27
 
 ### Added
