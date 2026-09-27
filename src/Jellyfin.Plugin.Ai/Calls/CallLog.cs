@@ -70,6 +70,7 @@ public sealed class CallLog
     private long _fileBytes;
     private bool _unreadable;
     private DateTimeOffset _lastTrim;
+    private long _seq; // the last entry's Seq: only ever grows, so paging cursors stay valid across trims and clears
 
     /// <summary>
     /// Initializes a new instance of the <see cref="CallLog"/> class.
@@ -167,6 +168,7 @@ public sealed class CallLog
         lock (_lock)
         {
             var entries = Load();
+            entry = entry with { Seq = ++_seq };
             entries.Add(entry);
             try
             {
@@ -196,14 +198,22 @@ public sealed class CallLog
         }
     }
 
+    /// <summary>The number of calls on a page of the settings page's list, unless it asks for another.</summary>
+    public const int PageSize = 15;
+
     /// <summary>
-    /// The call log for the settings page.
+    /// A page of the call log for the settings page, presented (see <see cref="CallPresenter"/>).
     /// </summary>
     /// <param name="limit">The most calls to return (1 to <see cref="MaxEntries"/>).</param>
+    /// <param name="before">The previous page's <see cref="CallLogView.Next"/>, or <c>null</c> for the newest calls.</param>
     /// <param name="caller">Only this caller's calls, or <c>null</c> or empty for all.</param>
     /// <param name="enabled">Whether calls are being logged.</param>
-    /// <returns>Recent calls, newest first, and the last error.</returns>
-    public CallLogView View(int limit, string? caller, bool enabled) => new(enabled, Recent(limit, caller), LastError());
+    /// <returns>The page of calls, newest first, the cursor for the next page, and the last error.</returns>
+    public CallLogView View(int limit, long? before, string? caller, bool enabled)
+    {
+        var (calls, next) = Page(limit, before, caller);
+        return new(enabled, calls.Select(CallPresenter.Present).ToList(), LastError() is { } e ? CallPresenter.Present(e) : null, next);
+    }
 
     /// <summary>
     /// Recent calls, newest first.
@@ -211,18 +221,40 @@ public sealed class CallLog
     /// <param name="limit">The most calls to return (1 to <see cref="MaxEntries"/>).</param>
     /// <param name="caller">Only this caller's calls, or <c>null</c> or empty for all.</param>
     /// <returns>The calls.</returns>
-    internal IReadOnlyList<CallEntry> Recent(int limit, string? caller)
+    internal IReadOnlyList<CallEntry> Recent(int limit, string? caller) => Page(limit, null, caller).Calls;
+
+    /// <summary>
+    /// A page of calls, newest first. The cursor is the place in the log of the page's last call, so calls recorded
+    /// while the list is open don't shift the pages.
+    /// </summary>
+    /// <param name="limit">The most calls to return (1 to <see cref="MaxEntries"/>).</param>
+    /// <param name="before">Only calls older than this cursor (a previous page's <c>Next</c>), or <c>null</c>.</param>
+    /// <param name="caller">Only this caller's calls, or <c>null</c> or empty for all.</param>
+    /// <returns>The calls, and the cursor for the next page (<c>null</c> if there are no more).</returns>
+    internal (IReadOnlyList<CallEntry> Calls, long? Next) Page(int limit, long? before, string? caller)
     {
         limit = Math.Clamp(limit, 1, MaxEntries);
         lock (_lock)
         {
             IEnumerable<CallEntry> newest = Enumerable.Reverse(Load());
+            if (before is { } cursor)
+            {
+                newest = newest.Where(e => e.Seq < cursor);
+            }
+
             if (!string.IsNullOrWhiteSpace(caller))
             {
                 newest = newest.Where(e => string.Equals(e.Caller, caller.Trim(), StringComparison.OrdinalIgnoreCase));
             }
 
-            return newest.Take(limit).ToList();
+            var page = newest.Take(limit + 1).ToList();
+            if (page.Count <= limit)
+            {
+                return (page, null);
+            }
+
+            page.RemoveAt(limit);
+            return (page, page[^1].Seq);
         }
     }
 
@@ -420,7 +452,7 @@ public sealed class CallLog
                     {
                         if (JsonSerializer.Deserialize<CallEntry>(line, Json) is { } e)
                         {
-                            entries.Add(e);
+                            entries.Add(e with { Seq = ++_seq });
                         }
                     }
                     catch (JsonException)

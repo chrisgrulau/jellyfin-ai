@@ -5,6 +5,22 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Changed
+
+- **UI:** `GET Ai/Calls` returns a page of calls (15 by default) with a `Next` cursor to pass as `before` for the next
+  page; calls recorded while the list is open don't shift the pages, and the caller filter applies across them. Each
+  call comes presented for the settings page: a headline ("Ingest asked which film or show this is — answered"), an
+  outcome icon and label, compact cost and duration, and its technical details (model, tokens, bytes sent, failure
+  class, answer shape, cost in the provider's currency) as a list of terms.
+- **UI:** a less cluttered settings page. Settings are grouped into sections that fold away (what may use AI,
+  providers and keys, spending and recent calls open; the model and prepaid credit, limits per provider, and taxes and
+  fees folded), with the longer explanations behind small "?" toggles. Providers that are coming later share one line.
+  Spending shows this month against the limit with a bar, and each provider's limit row shows its spending (a list
+  ready to grow with more providers). A per-provider value is only asked for when its limit needs one.
+- **UI:** recent calls are listed 15 at a time with **Show more**: one line each with an outcome icon, a headline, the
+  time relative to now (exact time on hover, no seconds), cost and duration; the model, tokens, bytes sent, failure
+  class, answer shape and costs open under **▸**. Works on narrow screens.
+
 ## [0.4.0-alpha] - 2026-09-27
 
 ### Added

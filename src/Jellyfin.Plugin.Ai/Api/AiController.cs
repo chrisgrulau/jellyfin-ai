@@ -151,17 +151,19 @@ public class AiController : ControllerBase
     }
 
     /// <summary>
-    /// Recent AI calls, newest first, and the last error if it is newer than the last answered call. Never what was sent.
+    /// A page of recent AI calls, newest first, presented for the settings page, and the last error if it is newer than
+    /// the last answered call. Never what was sent.
     /// </summary>
-    /// <param name="limit">The most calls to return (1 to 1,000; 100 by default).</param>
+    /// <param name="limit">The most calls to return (1 to 1,000; 15 by default).</param>
+    /// <param name="before">The previous page's <c>Next</c> cursor, for the next (older) page; omitted for the newest.</param>
     /// <param name="caller">Only this caller's calls (<c>ingest</c>, <c>subtitles</c>, <c>test</c>), or all.</param>
     /// <returns>The calls.</returns>
     [HttpGet("Calls")]
     [ProducesResponseType(StatusCodes.Status200OK)]
-    public ActionResult<CallLogView> Calls([FromQuery] int? limit, [FromQuery] string? caller)
+    public ActionResult<CallLogView> Calls([FromQuery] int? limit, [FromQuery] long? before, [FromQuery] string? caller)
     {
         var config = AiPlugin.Instance?.Configuration ?? new PluginConfiguration();
-        return _log.View(limit ?? 100, caller, config.KeepCallLog);
+        return _log.View(limit ?? CallLog.PageSize, before, caller, config.KeepCallLog);
     }
 
     /// <summary>

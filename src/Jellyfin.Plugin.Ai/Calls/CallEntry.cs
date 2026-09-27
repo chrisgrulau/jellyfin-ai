@@ -73,12 +73,8 @@ public sealed record CallEntry
     /// <summary>Gets a value indicating whether the call didn't produce an answer (refused or failed).</summary>
     [System.Text.Json.Serialization.JsonIgnore]
     public bool IsError => !string.Equals(Outcome, Answered, StringComparison.Ordinal);
-}
 
-/// <summary>
-/// The call log as the settings page shows it.
-/// </summary>
-/// <param name="Enabled">Whether calls are being logged.</param>
-/// <param name="Calls">Recent calls, newest first.</param>
-/// <param name="LastError">The most recent failure or refusal, when it is newer than the last answered call.</param>
-public sealed record CallLogView(bool Enabled, System.Collections.Generic.IReadOnlyList<CallEntry> Calls, CallEntry? LastError);
+    /// <summary>Gets the entry's place in the log since the server started (never saved), used as the paging cursor.</summary>
+    [System.Text.Json.Serialization.JsonIgnore]
+    internal long Seq { get; init; }
+}
