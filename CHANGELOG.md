@@ -5,6 +5,8 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.6.0-alpha] - 2026-09-28
+
 ### Added
 
 - **OpenAI, Google Gemini and OpenAI-compatible providers.** Besides Anthropic (Claude), the plugin can now use:
