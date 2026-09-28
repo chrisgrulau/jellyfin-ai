@@ -5,6 +5,53 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- **OpenAI, Google Gemini and OpenAI-compatible providers.** Besides Anthropic (Claude), the plugin can now use:
+  - **OpenAI** (GPT), through the official OpenAI SDK (`OpenAI` 2.14.0, MIT; shipped beside the plugin with
+    `System.ClientModel.dll` and `System.Memory.Data.dll`).
+  - **Google Gemini**, through the Gemini API with the family's shared provider HTTP code (Google's .NET SDK would bring
+    several more assemblies for one request type). The key travels in the `x-goog-api-key` header.
+  - **Any OpenAI-compatible service** (Ollama or another local server, OpenRouter, Groq …): an address, an optional key
+    and a model name. On this machine or the local network it costs nothing and isn't metered; a remote one is metered
+    at the prices entered under Advanced (or not at all when marked free), and a cost the service reports itself
+    (OpenRouter's `usage.cost`) is recorded instead. Plain `http://` is only accepted for local addresses. A service
+    without JSON-schema support is asked again in JSON mode.
+- **The current model, automatically.** OpenAI and Gemini use the newest model of the kind you choose (OpenAI:
+  balanced `sol`, most capable `astra`, cheapest `luna`; Gemini: Flash, Pro, Flash-Lite), from the provider's own model
+  list, checked once a day (hourly while the list can't be read) and only among models with a published price. A change
+  is written to the server log. A pinned model (under Advanced) still wins.
+- **Which provider answers:** *Answer requests with* (Anthropic by default) and up to three fallbacks. The next one is
+  tried when a provider isn't set up, can't be reached, refuses the key, is out of credit or over a spending limit, or
+  is failing for now; a rejected request, or one that was answered and charged but couldn't be used, isn't sent again.
+  The entry point's contract is unchanged (version 1).
+- **Provider health and a banner.** Every provider's recent record (calls and failures per hour for a day, last
+  success, last refused key or used-up credit) is kept in `health.json`, whether or not the call log is. A refused key,
+  used-up credit or repeated failures (5 in a day, or half of at least 4 calls) show a banner at the top of the settings
+  page with that provider's guidance (where to fix the key or credit, its status page, or whether a local service is
+  running); one-off failures stay quiet. Three successes in a row, a new key or a day's quiet clear it. `GET Ai/Health`.
+- **Prices** for OpenAI's GPT-6, GPT-5.6, GPT-5.5, GPT-5.4 and GPT-5 models and Gemini 3.8 Flash, 3.1 Pro (preview),
+  3.5 and 3.1 Flash-Lite and 2.5 models (price table version 2026-09-28; Gemini 3.8 Flash's price is introductory until
+  the end of 2026).
+- **Test** shows the model's reply and what the test cost (or that it was free), and tests what the page shows, saved
+  or not. **List available models** (under Advanced) fills the model field's suggestions. `GET Ai/Families`,
+  `GET Ai/Models/{provider}`.
+
+### Changed
+
+- The settings page lists every provider with the everyday settings first (the kind of model, or a compatible
+  service's address and model) and the rest under **Advanced** (a pinned model, prepaid credit, a compatible service's
+  prices). "Coming later" is gone.
+- Failures read the same for every provider: no connection, a temporary problem (tried again later), a used-up quota or
+  credit (with when it resets, if the provider said), a refused key, or a rejected request. Gemini's short per-minute
+  rate limits are waited out and tried again (twice at most) instead of being read as a used-up allowance.
+- The call log marks calls to local or free services as free, and a used-up quota reads as such rather than as a rate
+  limit.
+
+### Fixed
+
+- A metered model now disposes the provider client it wraps.
+
 ## [0.5.3-alpha] - 2026-09-27
 
 ### Changed

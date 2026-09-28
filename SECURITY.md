@@ -18,6 +18,12 @@ Only when an administrator has allowed a plugin to use AI, and only to the provi
 release names, candidate titles and short subtitle or transcript excerpts. Never file paths, user names, or anything
 from home video and photo libraries.
 
+An API key goes only to its own provider: Anthropic, OpenAI, Google (in the `x-goog-api-key` header, never in a URL), or
+the OpenAI-compatible service at the address the administrator entered. That address must use HTTPS unless it is on the
+server itself or the local network (the family's shared local-address check), so a key never crosses the internet in
+plain text; addresses with a user name, password or query are refused. A compatible service used without a key gets no
+`Authorization` header at all.
+
 ## Model output and prompts (rules for the model calls, which are being built)
 
 Model output is untrusted data. It is validated against what was asked (for example, the answer must be one of the

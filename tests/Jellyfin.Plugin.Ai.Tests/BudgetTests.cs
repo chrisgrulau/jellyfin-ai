@@ -22,8 +22,8 @@ public class BudgetTests
     // The rules themselves, as they'll apply once every provider can be used
     private static System.Collections.Generic.IReadOnlyList<BudgetMessage> EveryProvider(PluginConfiguration c) => BudgetRules.Check(c, _ => true);
 
-    private static ProviderSettings P(string id, ProviderBudgetMode mode = ProviderBudgetMode.OverallOnly, decimal value = 0, string url = "")
-        => new() { Id = id, Enabled = true, BudgetMode = mode, BudgetValue = value, BaseUrl = url };
+    private static ProviderSettings P(string id, ProviderBudgetMode mode = ProviderBudgetMode.OverallOnly, decimal value = 0, string url = "", string model = "")
+        => new() { Id = id, Enabled = true, BudgetMode = mode, BudgetValue = value, BaseUrl = url, Model = model };
 
     [Fact]
     public void Defaults_are_a_small_overall_cap_and_only_anthropic_allowed()
@@ -116,9 +116,10 @@ public class BudgetTests
     [InlineData("http://ai-box.local/v1")]
     public void Local_services_cost_nothing_and_need_no_limit(string url)
     {
-        var c = Config(10m, true, P(KnownProviders.OpenAiCompatible, url: url));
+        var c = Config(10m, true, P(KnownProviders.OpenAiCompatible, url: url, model: "llama3.3"));
 
         Assert.DoesNotContain(EveryProvider(c), m => m.Message.Contains("OpenAI-compatible", System.StringComparison.Ordinal));
+        Assert.True(ProviderRules.IsUnmetered(c.Providers.Single(p => p.Id == KnownProviders.OpenAiCompatible)));
     }
 
     [Fact]
@@ -129,19 +130,94 @@ public class BudgetTests
         Assert.Contains(EveryProvider(c), m => m.Message.Contains("OpenAI-compatible", System.StringComparison.Ordinal));
     }
 
-    // Review pass 3: FAM-08. Providers that can't be used yet make no calls and can't be changed on the page, so their
-    // saved settings are kept but never warn or block saving
+    // Since 0.6 every AI provider can be used, so every one is checked
     [Fact]
-    public void Providers_not_available_yet_are_kept_but_not_checked()
+    public void Every_ai_provider_is_available_and_checked()
     {
         var c = Config(10m, true, P(KnownProviders.Anthropic, ProviderBudgetMode.Amount, 3m), P(KnownProviders.OpenAi, ProviderBudgetMode.PercentOfOverall, 50m));
 
-        Assert.Contains(EveryProvider(c), m => m.Severity == BudgetSeverity.Error);
-        Assert.Empty(BudgetRules.Check(c));
-        var openAi = c.Providers.Single(p => p.Id == KnownProviders.OpenAi);
-        Assert.True(openAi.Enabled);
-        Assert.Equal(50m, openAi.BudgetValue);
-        Assert.True(KnownProviders.IsAvailable(KnownProviders.Anthropic));
-        Assert.DoesNotContain(KnownProviders.All, id => id != KnownProviders.Anthropic && KnownProviders.IsAvailable(id));
+        Assert.All(KnownProviders.All, id => Assert.True(KnownProviders.IsAvailable(id)));
+        Assert.Contains(BudgetRules.Check(c), m => m.Severity == BudgetSeverity.Error && m.Message.StartsWith("OpenAI:", System.StringComparison.Ordinal));
+    }
+
+    [Theory]
+    [InlineData("http://openrouter.ai/api/v1", "https://")]
+    [InlineData("ftp://localhost/v1", "must start with")]
+    [InlineData("https://user:pw@example.com/v1", "user name")]
+    [InlineData("", "Enter the service's address")]
+    public void A_compatible_service_needs_a_usable_address(string url, string reason)
+    {
+        var c = Config(10m, false, P(KnownProviders.OpenAiCompatible, url: url, model: "m"));
+
+        Assert.Contains(BudgetRules.Check(c), m => m.Severity == BudgetSeverity.Error && m.Message.Contains(reason, System.StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void A_remote_compatible_service_needs_prices_or_to_be_marked_free()
+    {
+        var unpriced = Config(10m, false, P(KnownProviders.OpenAiCompatible, url: "https://api.groq.com/openai/v1", model: "m"));
+        Assert.Contains(BudgetRules.Check(unpriced), m => m.Message.Contains("prices aren't known", System.StringComparison.Ordinal));
+
+        var priced = P(KnownProviders.OpenAiCompatible, url: "https://api.groq.com/openai/v1", model: "m");
+        priced.InputPrice = 0.5m;
+        priced.OutputPrice = 1m;
+        priced.PriceCurrency = "usd";
+        var c = Config(10m, false, priced);
+        Assert.DoesNotContain(BudgetRules.Check(c), m => m.Message.Contains("prices", System.StringComparison.Ordinal));
+        Assert.Equal("USD", c.Providers.Single(p => p.Id == KnownProviders.OpenAiCompatible).PriceCurrency);
+        Assert.False(ProviderRules.IsUnmetered(priced));
+
+        var free = P(KnownProviders.OpenAiCompatible, url: "https://free.example/v1", model: "m");
+        free.Free = true;
+        Assert.True(ProviderRules.IsUnmetered(free));
+        Assert.DoesNotContain(BudgetRules.Check(Config(10m, true, free)), m => m.Message.Contains("OpenAI-compatible", System.StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void Only_a_compatible_service_can_be_marked_free()
+    {
+        var p = P(KnownProviders.OpenAi);
+        p.Free = true;
+
+        var c = Config(10m, false, p);
+
+        Assert.False(c.Providers.Single(x => x.Id == KnownProviders.OpenAi).Free);
+    }
+
+    [Fact]
+    public void The_default_provider_and_fallbacks_are_tidied()
+    {
+        var c = new PluginConfiguration { DefaultProvider = "evil" };
+        foreach (var f in new[] { KnownProviders.Google, "evil", KnownProviders.Anthropic, KnownProviders.Google, KnownProviders.OpenAi })
+        {
+            c.FallbackProviders.Add(f);
+        }
+
+        BudgetRules.Normalise(c);
+
+        Assert.Equal(KnownProviders.Anthropic, c.DefaultProvider);
+        Assert.Equal([KnownProviders.Google, KnownProviders.OpenAi], c.FallbackProviders);
+    }
+
+    [Fact]
+    public void A_switched_off_default_provider_is_warned_about()
+    {
+        var c = Config(10m, false, new ProviderSettings { Id = KnownProviders.Anthropic, Enabled = false }, P(KnownProviders.OpenAi, ProviderBudgetMode.Amount, 2m));
+        c.DefaultProvider = KnownProviders.Anthropic;
+
+        var m = Assert.Single(BudgetRules.Check(c));
+        Assert.Contains("OpenAI answers instead", m.Message, System.StringComparison.Ordinal);
+        Assert.Equal([KnownProviders.OpenAi], ProviderRules.Order(c));
+    }
+
+    [Fact]
+    public void Requests_go_to_the_default_then_the_fallbacks_that_are_switched_on()
+    {
+        var c = Config(10m, false, P(KnownProviders.Anthropic), P(KnownProviders.OpenAi), new ProviderSettings { Id = KnownProviders.Google, Enabled = false }, P(KnownProviders.OpenAiCompatible, url: "http://localhost:11434/v1", model: "m"));
+        c.DefaultProvider = KnownProviders.OpenAiCompatible;
+        c.FallbackProviders.Add(KnownProviders.Google);
+        c.FallbackProviders.Add(KnownProviders.Anthropic);
+
+        Assert.Equal([KnownProviders.OpenAiCompatible, KnownProviders.Anthropic], ProviderRules.Order(c));
     }
 }

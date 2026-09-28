@@ -28,6 +28,11 @@ public class PluginServiceRegistrator : IPluginServiceRegistrator
         serviceCollection.AddSingleton(sp => new Calls.CallLog(
             Path.Combine(sp.GetRequiredService<IApplicationPaths>().PluginsPath, typeof(AiPlugin).Assembly.GetName().Name!, Calls.CallLog.FileName)));
 
+        // Each provider's recent record (for the settings page's banner), and "the current model" of each family
+        serviceCollection.AddSingleton(sp => new Health.ProviderHealthLog(
+            Path.Combine(sp.GetRequiredService<IApplicationPaths>().PluginsPath, typeof(AiPlugin).Assembly.GetName().Name!, Health.ProviderHealthLog.FileName)));
+        serviceCollection.AddSingleton<Models.ModelResolver>();
+
         // The entry point the other plugins use (in-process, JSON in and out)
         serviceCollection.AddHostedService<Bridge.AiBridgeHost>();
     }

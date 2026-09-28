@@ -59,6 +59,10 @@
       #AiConfigPage .ai-row { display: flex; gap: .5em 1em; align-items: end; flex-wrap: wrap; }
       #AiConfigPage .ai-row .inputContainer, #AiConfigPage .ai-row .selectContainer { flex: 1 1 12em; margin: 0; }
       #AiConfigPage .ai-row > button { margin: 0; }
+      #AiConfigPage .ai-provider-name { font-weight: 600; }
+      #AiConfigPage .ai-order { margin: .25em 0 1em; }
+      #AiConfigPage .ai-banner { margin: .75em 0 1em; }
+      #AiConfigPage .ai-banner .ai-error { margin: .4em 0; }
 
       /* Spending: a line for the month, then a row per provider (grows as more providers are added) */
       #AiConfigPage .ai-meter { height: .5em; border-radius: .25em; background: var(--ai-line); overflow: hidden; margin: .3em 0 .2em; max-width: 28em; }
@@ -97,6 +101,8 @@
       <div class="content-primary">
         <h2 class="sectionTitle">Shoal AI</h2>
         <p class="ai-muted">Optional AI help for the other Shoal plugins' hard decisions, within limits you set. Nothing is sent until you allow it.</p>
+        <!-- Systemic provider problems only (a refused key, used-up credit, repeated failures), with what to do; one-off failures stay quiet -->
+        <div id="HealthBanner" class="ai-banner" role="alert" hidden></div>
 
         <form id="AiConfigForm">
           <div class="checkboxContainer">
@@ -131,15 +137,36 @@
 
           <details class="ai-section" open>
             <summary>Providers and keys</summary>
+            <div class="ai-order">
+              <div class="ai-row">
+                <div class="selectContainer">
+                  <label class="selectLabel" for="DefaultProvider">Answer requests with</label>
+                  <select is="emby-select" id="DefaultProvider"></select>
+                </div>
+                <div class="selectContainer">
+                  <label class="selectLabel" for="Fallback1">If it can't answer, try</label>
+                  <select is="emby-select" id="Fallback1" class="ai-fallback"></select>
+                </div>
+                <div class="selectContainer">
+                  <label class="selectLabel" for="Fallback2">Then</label>
+                  <select is="emby-select" id="Fallback2" class="ai-fallback"></select>
+                </div>
+                <div class="selectContainer">
+                  <label class="selectLabel" for="Fallback3">Then</label>
+                  <select is="emby-select" id="Fallback3" class="ai-fallback"></select>
+                </div>
+              </div>
+              <div class="fieldDescription">A provider is tried next when the one before can't answer: it isn't set up, can't be reached, refused the key, is out of credit or over its limit. A request that was answered but couldn't be used isn't sent again (it was already paid for).</div>
+            </div>
             <div id="Providers"></div>
-            <div id="ProvidersLater" class="ai-muted" style="margin:.5em 0"></div>
             <div id="AiStatus" class="ai-sr" role="status" aria-live="polite"></div>
             <details class="ai-help">
               <summary>About keys, models and the Test button</summary>
               <div>
-                <p>Keys are stored on this server in a file only Jellyfin can read. They are never shown again, logged or included in exports; you can replace or clear them.</p>
-                <p>Leave the model empty to use the recommended model (for Claude, Claude Opus 5.5), updated with plugin releases. Naming a model pins it: it may cost more, and the provider may retire it.</p>
-                <p><strong>Test</strong> sends one tiny request (a fraction of a cent, counted like any other). A prepaid credit is usually bought in US dollars; what's left counts only this plugin's use of the key.</p>
+                <p>Keys are stored on this server in a file only Jellyfin can read. They are never shown again, logged or included in exports; you can replace or clear them. An OpenAI-compatible service may not need one.</p>
+                <p>OpenAI and Gemini use the newest model of the kind you choose, checked once a day (a change is noted in the server log). Claude uses Claude Opus 5.5, updated with plugin releases. Under Advanced you can pin a model instead: it may cost more, and the provider may retire it.</p>
+                <p>An OpenAI-compatible service (Ollama or another local server, OpenRouter, Groq …) needs its address and a model name. On this machine or the local network it counts as free and has no spending limit; elsewhere, enter its prices under Advanced, or tick "This service is free". A key is only sent over plain http:// to a local address.</p>
+                <p><strong>Test</strong> sends one tiny request (a fraction of a cent, counted like any other) and shows the reply and what it cost. A prepaid credit is usually bought in US dollars; what's left counts only this plugin's use of the key.</p>
               </div>
             </details>
           </details>
@@ -182,7 +209,7 @@
 
             <details class="ai-sub" id="SpendingProviders">
               <summary>Limit per provider</summary>
-              <p class="ai-muted">An amount, or a share of the overall limit. Local services cost nothing and have no limit. Speech-to-text is listed while Shoal Subtitles is installed.</p>
+              <p class="ai-muted">An amount, or a share of the overall limit. A local or free OpenAI-compatible service costs nothing, so its limit doesn't apply. Speech-to-text is listed while Shoal Subtitles is installed.</p>
               <div id="Limits"></div>
             </details>
             <details class="ai-sub">
@@ -241,14 +268,20 @@
       (function () {
         var pluginId = '5f260705-cb7c-4fee-8324-b40202261739';
         var page = document.querySelector('#AiConfigPage');
-        // As KnownProviders.All, in its fixed order; the last value is KnownProviders.IsAvailable. Providers not available
-        // yet are listed as coming later, and whatever was saved for them is sent back unchanged (FAM-08)
+        // As KnownProviders.All, in its fixed order (not an order of preference: see "Answer requests with"); the last value
+        // is KnownProviders.IsAvailable. A provider not available would be listed as coming later, and whatever was saved
+        // for it sent back unchanged (FAM-08)
         var providers = [
-          ['anthropic', 'Anthropic (Claude)', 'claude-opus-5-5 (recommended)', true],
-          ['openai', 'OpenAI', 'Current recommended (automatic)', false],
-          ['google', 'Google (Gemini)', 'Current recommended (automatic)', false],
-          ['openai-compatible', 'OpenAI-compatible service', 'Model name', false]
+          ['anthropic', 'Anthropic (Claude)', 'Claude API key (console.anthropic.com)', true],
+          ['openai', 'OpenAI (GPT)', 'OpenAI API key (platform.openai.com)', true],
+          ['google', 'Google Gemini', 'Gemini API key (aistudio.google.com)', true],
+          ['openai-compatible', 'OpenAI-compatible service (Ollama, OpenRouter, Groq …)', 'API key, if the service needs one', true]
         ];
+        // The model families (Ai/Families): provider id → [{ Id, Label, IsDefault }], and the automatic choices made so far
+        var families = {};
+        var chosen = [];
+        var claudeDefault = 'claude-opus-5-5';
+        function nameOf(id) { var p = providers.filter(function (x) { return x[0] === id; })[0]; return p ? p[1] : id; }
         // The currencies that can be chosen: replaced by the server's list (Ai/Spending) when it's available; this copy is
         // only a fallback (the euro plus every currency in the European Central Bank's daily rates)
         // Shoal Subtitles' paid speech-to-text, kept within this budget (KnownProviders.Speech): a limit only, no key here.
@@ -358,51 +391,161 @@
 
         function providerSettings(id) {
           var p = (config.Providers || []).filter(function (x) { return x.Id === id; })[0];
-          return p || { Id: id, Enabled: id === 'anthropic', Model: '', BaseUrl: '', BudgetMode: 'OverallOnly', BudgetValue: 0, PrepaidCredit: 0, PrepaidCreditCurrency: 'USD', PrepaidCreditDate: '' };
+          return p || { Id: id, Enabled: id === 'anthropic', Model: '', Family: '', BaseUrl: '', Free: false, InputPrice: 0, OutputPrice: 0, PriceCurrency: 'USD', BudgetMode: 'OverallOnly', BudgetValue: 0, PrepaidCredit: 0, PrepaidCreditCurrency: 'USD', PrepaidCreditDate: '' };
+        }
+
+        function input(f, cls, label, type, value, extra) {
+          return '<div class="inputContainer"><label class="inputLabel inputLabelUnfocused" for="' + f + cls + '">' + label + '</label>' +
+            '<input is="emby-input" type="' + type + '" class="p-' + cls + '" id="' + f + cls + '" value="' + esc(value) + '"' + (extra || '') + ' /></div>';
+        }
+        function currencySelect(f, cls, label, value) {
+          return '<div class="selectContainer"><label class="selectLabel" for="' + f + cls + '">' + label + '</label><select is="emby-select" class="p-' + cls + '" id="' + f + cls + '">' +
+            currencies.map(function (x) { return '<option value="' + x + '"' + (x === (value || 'USD') ? ' selected' : '') + '>' + x + '</option>'; }).join('') + '</select></div>';
+        }
+
+        // The model the automatic choice uses now for a provider's family, if known
+        function currentModel(id, family) {
+          if (id === 'anthropic') { return claudeDefault; }
+          var fams = families[id] || [];
+          var fam = fams.filter(function (x) { return x.Id === family; })[0] || fams.filter(function (x) { return x.IsDefault; })[0];
+          var c = fam && chosen.filter(function (x) { return x.Provider === id && x.Family === fam.Id; })[0];
+          return c ? c.Model : '';
         }
 
         function renderProviders(keys) {
-          var later = providers.filter(function (p) { return !p[3]; });
-          var kept = later.some(function (p) { var v = providerSettings(p[0]); return (keys && keys[p[0]]) || v.Model || v.BaseUrl || v.PrepaidCredit; });
-          page.querySelector('#ProvidersLater').textContent = later.length
-            ? 'Coming later: ' + later.map(function (p) { return p[1]; }).join(', ') + '.' + (kept ? ' What you saved for them earlier is kept.' : '')
-            : '';
           page.querySelector('#Providers').innerHTML = providers.filter(function (p) { return p[3]; }).map(function (p) {
             var v = providerSettings(p[0]);
             var set = keys && keys[p[0]];
             var f = 'p-' + p[0] + '-';
-            var credit = p[0] === 'openai-compatible' ? '' :
-              '<div class="ai-row">' +
-              '<div class="inputContainer"><label class="inputLabel inputLabelUnfocused" for="' + f + 'credit">Prepaid credit</label><input is="emby-input" type="number" min="0" step="0.01" class="p-credit" id="' + f + 'credit" value="' + esc(v.PrepaidCredit || '') + '" placeholder="Not tracked" /></div>' +
-              '<div class="selectContainer"><label class="selectLabel" for="' + f + 'credit-cur">Bought in</label><select is="emby-select" class="p-credit-cur" id="' + f + 'credit-cur">' +
-              currencies.map(function (x) { return '<option value="' + x + '"' + (x === (v.PrepaidCreditCurrency || 'USD') ? ' selected' : '') + '>' + x + '</option>'; }).join('') + '</select></div>' +
-              '<div class="inputContainer"><label class="inputLabel inputLabelUnfocused" for="' + f + 'credit-date">Bought or topped up on</label><input is="emby-input" type="date" class="p-credit-date" id="' + f + 'credit-date" value="' + esc(v.PrepaidCreditDate || '') + '" /></div>' +
-              '</div>';
-            var url = p[0] !== 'openai-compatible' ? '' :
-              '<div class="inputContainer"><label class="inputLabel inputLabelUnfocused" for="' + f + 'url">Address</label><input is="emby-input" type="url" class="p-url" id="' + f + 'url" value="' + esc(v.BaseUrl) + '" placeholder="http://localhost:11434/v1" />' +
-              '<div class="fieldDescription">A local address counts as free, with no spending limit; set a limit in any paid service it relays to.</div></div>';
+            var compatible = p[0] === 'openai-compatible';
+            var fams = families[p[0]] || [];
+            // Basic: what most people set. The address and model for a compatible service; the kind of model otherwise
+            var basic = '';
+            if (compatible) {
+              basic = '<div class="ai-row">' +
+                input(f, 'url', 'Address', 'url', v.BaseUrl, ' placeholder="http://localhost:11434/v1"') +
+                input(f, 'model', 'Model', 'text', v.Model, ' placeholder="For example llama3.3 or openai/gpt-6-sol" list="' + f + 'models"') +
+                '</div><datalist id="' + f + 'models"></datalist>';
+            } else if (fams.length) {
+              basic = '<div class="ai-row"><div class="selectContainer"><label class="selectLabel" for="' + f + 'family">Kind of model</label><select is="emby-select" class="p-family" id="' + f + 'family">' +
+                fams.map(function (x) { return '<option value="' + esc(x.Id) + '"' + ((v.Family || '') === x.Id || (!v.Family && x.IsDefault) ? ' selected' : '') + '>' + esc(x.Label) + '</option>'; }).join('') +
+                '</select></div></div>';
+            }
+            var now = compatible ? '' : (v.Model ? 'Pinned to ' + v.Model + '.' : (currentModel(p[0], v.Family) ? 'Uses ' + currentModel(p[0], v.Family) + ' now.' : ''));
+            // Advanced: a pinned model, prepaid credit; for a compatible service, its prices or that it is free
+            var advanced = compatible
+              ? '<div class="ai-row">' +
+                input(f, 'in-price', 'Price per million input tokens', 'number', v.InputPrice || '', ' min="0" step="0.0001" placeholder="Not set"') +
+                input(f, 'out-price', 'Price per million output tokens', 'number', v.OutputPrice || '', ' min="0" step="0.0001" placeholder="Not set"') +
+                currencySelect(f, 'price-cur', 'Currency', v.PriceCurrency) + '</div>' +
+                '<div class="checkboxContainer"><label class="emby-checkbox-label"><input is="emby-checkbox" type="checkbox" class="p-free"' + (v.Free ? ' checked' : '') + ' /><span>This service is free (don\'t meter it)</span></label></div>' +
+                '<div class="fieldDescription">A local address counts as free, with no spending limit; set a limit in any paid service it relays to. A remote service is only used once its prices are entered or it is marked free; if it reports what each call cost (OpenRouter does), that is recorded instead.</div>'
+              : input(f, 'model', 'Pin a model (optional)', 'text', v.Model, ' placeholder="' + esc(p[0] === 'anthropic' ? claudeDefault + ' (recommended)' : 'Automatic: newest of the kind above') + '" list="' + f + 'models"') +
+                '<datalist id="' + f + 'models"></datalist>' +
+                '<div class="ai-row">' +
+                input(f, 'credit', 'Prepaid credit', 'number', v.PrepaidCredit || '', ' min="0" step="0.01" placeholder="Not tracked"') +
+                currencySelect(f, 'credit-cur', 'Bought in', v.PrepaidCreditCurrency) +
+                input(f, 'credit-date', 'Bought or topped up on', 'date', v.PrepaidCreditDate || '') +
+                '</div>';
             return '<div class="ai-provider" data-provider="' + p[0] + '">' +
-              '<div class="checkboxContainer"><label class="emby-checkbox-label"><input is="emby-checkbox" type="checkbox" class="p-on"' + (v.Enabled ? ' checked' : '') + ' /><span>' + esc(p[1]) + '</span></label></div>' +
-              '<div class="ai-row"><div class="inputContainer"><label class="inputLabel inputLabelUnfocused" for="' + f + 'key">API key: ' + (set ? '<span class="ai-set">✓ set</span>' : 'not set') + '</label>' +
+              '<div class="checkboxContainer"><label class="emby-checkbox-label"><input is="emby-checkbox" type="checkbox" class="p-on"' + (v.Enabled ? ' checked' : '') + ' /><span class="ai-provider-name">' + esc(p[1]) + '</span></label></div>' +
+              basic +
+              '<div class="ai-row"><div class="inputContainer"><label class="inputLabel inputLabelUnfocused" for="' + f + 'key">' + esc(p[2]) + ': ' + (set ? '<span class="ai-set">✓ set</span>' : (compatible ? 'none' : 'not set')) + '</label>' +
               '<input is="emby-input" type="password" class="p-key" id="' + f + 'key" autocomplete="off" placeholder="' + (set ? 'Enter a new key to replace it' : 'Paste the key') + '" /></div>' +
               '<button is="emby-button" type="button" class="raised p-savekey"><span>Save key</span></button>' +
               (set ? '<button is="emby-button" type="button" class="raised button-alt p-clearkey"><span>Clear</span></button>' : '') +
               '<button is="emby-button" type="button" class="raised p-test"><span>Test</span></button></div>' +
               '<div class="p-result ai-outcome" hidden></div>' +
+              '<div class="p-now ai-muted">' + esc(now) + '</div>' +
               '<div class="p-credit-left ai-muted"></div>' +
-              '<details class="ai-sub"><summary>Model' + (p[0] === 'openai-compatible' ? ' and address' : ' and prepaid credit') + (v.Model ? ': ' + esc(v.Model) : '') + '</summary>' +
-              '<div class="inputContainer"><label class="inputLabel inputLabelUnfocused" for="' + f + 'model">Model</label><input is="emby-input" type="text" class="p-model" id="' + f + 'model" value="' + esc(v.Model) + '" placeholder="' + esc(p[2]) + '" /></div>' +
-              url + credit + '</details>' +
+              '<details class="ai-sub p-advanced"><summary>Advanced' + (v.Model && !compatible ? ': pinned to ' + esc(v.Model) : '') + '</summary>' +
+              advanced +
+              (p[0] === 'anthropic' ? '' : '<div class="ai-row" style="justify-content:center;margin:.5em 0"><button is="emby-button" type="button" class="raised p-models"><span>List available models</span></button></div>' +
+              '<div class="p-models-note ai-muted"></div>') +
+              '</details>' +
               '</div>';
           }).join('');
+          renderOrder();
           placeOutcomes();
           renderLimits();
+        }
+
+        // "Answer requests with" and the fallbacks: each provider once, "nobody" ends the list
+        function renderOrder() {
+          var def = page.querySelector('#DefaultProvider');
+          var current = def.value || config.DefaultProvider || 'anthropic';
+          def.innerHTML = providers.map(function (p) { return '<option value="' + p[0] + '"' + (p[0] === current ? ' selected' : '') + '>' + esc(p[1]) + '</option>'; }).join('');
+          var picked = [current];
+          var saved = (config.FallbackProviders || []).slice();
+          Array.prototype.forEach.call(page.querySelectorAll('.ai-fallback'), function (sel, i) {
+            var was = sel.getAttribute('data-ready') ? sel.value : (saved[i] || '');
+            sel.setAttribute('data-ready', '1');
+            var options = providers.filter(function (p) { return picked.indexOf(p[0]) < 0; });
+            var value = options.some(function (p) { return p[0] === was; }) && (i === 0 || picked.length === i + 1) ? was : '';
+            sel.innerHTML = '<option value="">' + 'Nothing else' + '</option>' +
+              options.map(function (p) { return '<option value="' + p[0] + '"' + (p[0] === value ? ' selected' : '') + '>' + esc(p[1]) + '</option>'; }).join('');
+            sel.value = value;
+            sel.closest('.selectContainer').hidden = i > 0 && picked.length < i + 1;
+            if (value) { picked.push(value); }
+          });
+        }
+
+        function orderFromPage() {
+          var list = [];
+          Array.prototype.forEach.call(page.querySelectorAll('.ai-fallback'), function (sel) {
+            if (!sel.closest('.selectContainer').hidden && sel.value && list.indexOf(sel.value) < 0) { list.push(sel.value); }
+          });
+          return list;
+        }
+
+        // The families and the automatic choices so far (no provider is asked)
+        function loadFamilies() {
+          return ApiClient.getJSON(ApiClient.getUrl('Ai/Families')).then(function (r) {
+            families = (r && r.Families) || {};
+            chosen = (r && r.Current) || [];
+            claudeDefault = (r && r.ClaudeDefault) || claudeDefault;
+          }, function () {});
+        }
+
+        // Advanced: asks the provider which models it offers (with the saved key), for the model field's suggestions
+        function listModels(row, id, done) {
+          var query = {};
+          var family = row.querySelector('.p-family');
+          if (family) { query.family = family.value; }
+          var url = row.querySelector('.p-url');
+          if (url && url.value.trim()) { query.address = url.value.trim(); }
+          ApiClient.getJSON(ApiClient.getUrl('Ai/Models/' + id, query)).then(function (m) {
+            var list = row.querySelector('datalist');
+            if (list) { list.innerHTML = (m.Available || []).map(function (x) { return '<option value="' + esc(x) + '"></option>'; }).join(''); }
+            var note = (m.Available || []).length + ' model' + ((m.Available || []).length === 1 ? '' : 's') + ' available' + ((m.Available || []).length ? ' (suggested in the model field)' : '') + '.';
+            if (m.Current && id !== 'openai-compatible') {
+              note += ' The automatic choice is ' + m.Current + '.';
+              if (!row.querySelector('.p-model').value.trim()) { row.querySelector('.p-now').textContent = 'Uses ' + m.Current + ' now.'; }
+            }
+            row.querySelector('.p-models-note').textContent = m.Problem ? m.Problem : note;
+            done(!m.Problem, m.Problem ? 'Not listed: ' + m.Problem : 'Listed.');
+            return loadFamilies();
+          }, function (err) {
+            return failureText(err, "The models couldn't be listed.").then(function (why) { done(false, 'Not listed: ' + why); });
+          });
+        }
+
+        // Systemic problems only: a banner per provider with what to do
+        function loadHealth() {
+          return ApiClient.getJSON(ApiClient.getUrl('Ai/Health')).then(function (h) {
+            var box = page.querySelector('#HealthBanner');
+            var problems = (h && h.Problems) || [];
+            box.innerHTML = problems.map(function (x) {
+              return '<div class="ai-error"><strong>' + esc(x.Name) + ':</strong> ' + esc(x.Problem) + '</div>';
+            }).join('');
+            box.hidden = !problems.length;
+          }, function () {});
         }
 
         // The providers the spending limits cover, one row each: a list that can grow as more providers are added
         function limitedProviders() {
           var shown = spending && Array.isArray(spending.SpeechProviders) ? spending.SpeechProviders : [];
-          return providers.filter(function (p) { return p[3] && p[0] !== 'openai-compatible'; })
+          return providers.filter(function (p) { return p[3]; })
             .concat(speechProviders.filter(function (p) { return shown.indexOf(p[0]) >= 0; }));
         }
 
@@ -440,16 +583,24 @@
           c.OverallMonthlyBudget = Math.max(0, parseFloat(page.querySelector('#OverallMonthlyBudget').value) || 0);
           c.NoOverallLimit = page.querySelector('#NoOverallLimit').checked;
           c.ExtraChargesPercent = Math.min(100, Math.max(0, parseFloat(page.querySelector('#ExtraChargesPercent').value) || 0));
+          c.DefaultProvider = page.querySelector('#DefaultProvider').value || c.DefaultProvider || 'anthropic';
+          c.FallbackProviders = page.querySelector('#DefaultProvider').options.length ? orderFromPage() : (c.FallbackProviders || []);
           c.Providers = providers.map(function (p) {
             var v = providerSettings(p[0]);
             if (!p[3]) { return JSON.parse(JSON.stringify(v)); }
             var row = page.querySelector('[data-provider="' + p[0] + '"]');
             var limit = page.querySelector('[data-limit="' + p[0] + '"]');
+            function num(cls) { var e = row.querySelector('.p-' + cls); return e ? Math.max(0, parseFloat(e.value) || 0) : 0; }
             return {
               Id: p[0],
               Enabled: row.querySelector('.p-on').checked,
               Model: row.querySelector('.p-model').value.trim(),
+              Family: row.querySelector('.p-family') ? row.querySelector('.p-family').value : (v.Family || ''),
               BaseUrl: row.querySelector('.p-url') ? row.querySelector('.p-url').value.trim() : v.BaseUrl,
+              Free: row.querySelector('.p-free') ? row.querySelector('.p-free').checked : false,
+              InputPrice: num('in-price'),
+              OutputPrice: num('out-price'),
+              PriceCurrency: row.querySelector('.p-price-cur') ? row.querySelector('.p-price-cur').value : (v.PriceCurrency || 'USD'),
               BudgetMode: limit ? limit.querySelector('.l-mode').value : 'OverallOnly',
               BudgetValue: limit ? Math.max(0, parseFloat(limit.querySelector('.l-value').value) || 0) : 0,
               PrepaidCredit: row.querySelector('.p-credit') ? Math.max(0, parseFloat(row.querySelector('.p-credit').value) || 0) : 0,
@@ -619,7 +770,18 @@
             });
         });
 
-        page.addEventListener('change', refresh);
+        page.addEventListener('change', function (e) {
+          if (e.target.closest('#DefaultProvider, .ai-fallback') && config) { renderOrder(); }
+          if (e.target.closest('.p-family') && config) {
+            var row = e.target.closest('[data-provider]');
+            var id = row.getAttribute('data-provider');
+            if (!row.querySelector('.p-model').value.trim()) {
+              var m = currentModel(id, e.target.value);
+              row.querySelector('.p-now').textContent = m ? 'Uses ' + m + ' now.' : 'The newest model of this kind is looked up when it is first used.';
+            }
+          }
+          refresh();
+        });
 
         page.addEventListener('click', function (e) {
           var row = e.target.closest('[data-provider]');
@@ -638,10 +800,12 @@
               });
           } else if (e.target.closest('.p-test')) {
             done = busy(e.target.closest('.p-test'), 'Testing…');
-            ApiClient.ajax({ type: 'POST', url: ApiClient.getUrl('Ai/Test'), data: JSON.stringify({ Provider: id, Model: row.querySelector('.p-model').value.trim() }), contentType: 'application/json', dataType: 'json' })
-              .then(function (r) { done(!!r.Ok, (r.Ok ? '✓ ' : '✗ ') + r.Message); loadSpending(); loadCredit(); loadCalls(false); }, function (err) {
+            ApiClient.ajax({ type: 'POST', url: ApiClient.getUrl('Ai/Test'), data: JSON.stringify({ Provider: id, Model: row.querySelector('.p-model').value.trim(), Settings: fromPage().Providers.filter(function (x) { return x.Id === id; })[0] }), contentType: 'application/json', dataType: 'json' })
+              .then(function (r) { done(!!r.Ok, (r.Ok ? '✓ ' : '✗ ') + r.Message); loadSpending(); loadCredit(); loadCalls(false); loadHealth(); }, function (err) {
                 return failureText(err, "The test couldn't be run.").then(function (why) { done(false, '✗ ' + why); });
               });
+          } else if (e.target.closest('.p-models')) {
+            listModels(row, id, busy(e.target.closest('.p-models'), 'Listing…'));
           } else if (e.target.closest('.p-clearkey')) {
             config = fromPage();
             done = busy(e.target.closest('.p-clearkey'), 'Clearing…');
@@ -670,8 +834,10 @@
             config = c;
             page.querySelector('#Currency').innerHTML = currencies.map(function (x) { return '<option value="' + x + '">' + x + '</option>'; }).join('');
             page.querySelector('#Currency').value = currencies.indexOf(c.Currency) >= 0 ? c.Currency : 'USD';
-            return loadKeys();
-          }).then(function () { refresh(); loadCalls(false); Dashboard.hideLoadingMsg(); });
+            page.querySelector('#DefaultProvider').innerHTML = '';
+            Array.prototype.forEach.call(page.querySelectorAll('.ai-fallback'), function (sel) { sel.removeAttribute('data-ready'); });
+            return loadFamilies().then(loadKeys);
+          }).then(function () { refresh(); loadCalls(false); loadHealth(); Dashboard.hideLoadingMsg(); });
         });
 
         page.querySelector('#AiConfigForm').addEventListener('submit', function (e) {
@@ -691,7 +857,7 @@
               config = c;
               Dashboard.processPluginConfigurationUpdateResult(r);
               done(true, 'Saved.');
-              loadSpending(); loadCredit(); loadCalls(false);
+              loadSpending(); loadCredit(); loadCalls(false); loadHealth();
             });
           }).catch(function (err) {
             return failureText(err, "The settings couldn't be saved.").then(function (why) { done(false, 'Not saved: ' + why); });

@@ -7,13 +7,17 @@ framework: "net10.0"
 owner: "chrisgrulau"
 overview: "Optional, budget-controlled AI help for the Ingest and Subtitles plugins."
 description: >
-  Gives the other plugins in the family optional access to AI models (Anthropic Claude by default; OpenAI, Google and
-  OpenAI-compatible services such as a local server), for decisions they can't make on their own. Nothing uses it until
+  Gives the other plugins in the family optional access to AI models (Anthropic Claude by default; OpenAI, Google Gemini
+  and OpenAI-compatible services such as a local Ollama server, OpenRouter or Groq), for decisions they can't make on
+  their own. Nothing uses it until
   you allow it; spending limits apply overall and per provider, in your own currency.
 category: "General"
 artifacts:
   - "Jellyfin.Plugin.Ai.dll"
   - "Anthropic.dll"
   - "Microsoft.Extensions.AI.Abstractions.dll"
+  - "OpenAI.dll"
+  - "System.ClientModel.dll"
+  - "System.Memory.Data.dll"
 changelog: >
   0.5.3-alpha: every button that calls the server shows progress while it works, and its outcome next to it.

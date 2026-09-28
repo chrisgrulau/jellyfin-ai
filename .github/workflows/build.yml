@@ -64,11 +64,12 @@ jobs:
       - name: Package
         run: |
           mkdir -p artifacts
-          # The plugin, the Anthropic SDK and its one dependency outside .NET (all listed in build.yaml)
-          for f in Jellyfin.Plugin.Ai.dll Anthropic.dll Microsoft.Extensions.AI.Abstractions.dll; do
+          # The plugin, the Anthropic and OpenAI SDKs and their dependencies outside .NET (all listed in build.yaml)
+          files="Jellyfin.Plugin.Ai.dll Anthropic.dll Microsoft.Extensions.AI.Abstractions.dll OpenAI.dll System.ClientModel.dll System.Memory.Data.dll"
+          for f in $files; do
             cp "src/Jellyfin.Plugin.Ai/bin/Release/net10.0/$f" artifacts/
           done
-          (cd artifacts && zip -q ../jellyfin-plugin-ai.zip Jellyfin.Plugin.Ai.dll Anthropic.dll Microsoft.Extensions.AI.Abstractions.dll)
+          (cd artifacts && zip -q ../jellyfin-plugin-ai.zip $files)
 
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:

@@ -44,6 +44,19 @@ public class PluginConfiguration : BasePluginConfiguration
     [SuppressMessage("Usage", "CA2227:Collection properties should be read only", Justification = "Jellyfin deserializes plugin configuration from JSON, which cannot populate a get-only collection.")]
     public Collection<ProviderSettings> Providers { get; set; } = [];
 
+    /// <summary>
+    /// Gets or sets the provider that answers requests (<see cref="KnownProviders.All"/>); Anthropic by default.
+    /// </summary>
+    public string DefaultProvider { get; set; } = KnownProviders.Anthropic;
+
+    /// <summary>
+    /// Gets or sets the providers tried, in order, when the default one can't answer (it isn't set up, can't be reached,
+    /// refused the key, is out of credit or over its limit). Empty means no fallback. A request that was answered but
+    /// couldn't be used (and so was charged) isn't sent again elsewhere.
+    /// </summary>
+    [SuppressMessage("Usage", "CA2227:Collection properties should be read only", Justification = "Jellyfin deserializes plugin configuration from JSON, which cannot populate a get-only collection.")]
+    public Collection<string> FallbackProviders { get; set; } = [];
+
     /// <summary>Gets or sets the currency limits and costs are set and shown in (ISO 4217).</summary>
     public string Currency { get; set; } = "USD";
 

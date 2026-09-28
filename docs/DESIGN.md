@@ -15,16 +15,48 @@ a contract test) and use a JSON-in/JSON-out entry point with BCL types only. Eac
 | Provider | Notes |
 |---|---|
 | Anthropic (default) | Claude through the official C# SDK (`Anthropic`, pinned and locked; shipped beside the plugin with `Microsoft.Extensions.AI.Abstractions`). Model left empty = Claude Opus 5.5 (`claude-opus-5-5`, US$4 / US$20 per million tokens), updated with plugin releases. Answers use structured output (a JSON schema) at low effort by default; thinking is billed as output. |
-| OpenAI (coming later) | Curated family map for "current recommended". |
-| Google (coming later) | Gemini; curated family map. |
-| OpenAI-compatible (coming later) | Any service speaking the OpenAI API: a local server (Ollama …), OpenRouter, Groq. Local addresses cost nothing. |
+| OpenAI | `Models.OpenAiChatModel` through the official OpenAI SDK (`OpenAI` 2.14.0, MIT; shipped with `System.ClientModel` and `System.Memory.Data`). Chat Completions with a JSON-schema response format (strict when the schema is closed: every object lists all its properties as required and forbids others), `max_completion_tokens` and `reasoning_effort` (the SDK marks the property evaluation-only, OPENAI001; a model that rejects it is asked once more without). The SDK retries twice itself. |
+| Google Gemini | `Models.GeminiModel`: `generateContent` over HTTPS with common's `ProviderHttp` (Google's `Google.GenAI` SDK would add `Google.Apis.Auth`, its dependencies and a second `Microsoft.Extensions.AI.Abstractions` for one request type). The key goes in `x-goog-api-key`, never the URL. `responseMimeType: application/json` with `responseJsonSchema`; `thinkingConfig.thinkingLevel` (`low`, or `high` for medium and high effort) for Gemini 3 and later. Output tokens = candidates + thoughts. Transient failures with a short wait are tried again twice here. |
+| OpenAI-compatible | The same `OpenAiChatModel` pointed at the service's address: an optional key (without one, no `Authorization` header is sent), a model that must be named, no reasoning effort. A service that rejects `json_schema` is asked once more in JSON mode with the schema in the instructions, and an answer wrapped in a Markdown code fence is unwrapped. |
 
-Only Anthropic is available in this version. The settings page shows the others as "coming later" without any fields,
-sends back whatever was saved for them unchanged, and the spending checks leave them out. The providers are kept in a
-fixed order (`KnownProviders.All`); it isn't an order of preference.
+**Which provider answers** (`ProviderRules.Order`): `PluginConfiguration.DefaultProvider` (Anthropic by default), then
+`FallbackProviders` (up to three on the page), each once and only if switched on; if the default is off and no fallback
+is on, the first provider switched on answers (the page warns). The bridge (`AiBridge.AnswerAsync`) tries them in turn:
+a provider that can't be built (no key, no address, no prices) or whose call fails without being charged, other than a
+rejected request (`FallsBack`), passes the request on; every attempt is in the call log. A charged failure (a refusal,
+cut off, unreadable) isn't sent elsewhere, so it isn't paid for twice. The reply is the first answer, or the last
+failure. The bridge contract is unchanged (version 1).
 
-A named model is pinned; the settings page notes that a pinned model may cost more than the automatic choice and can be
-retired by the provider.
+**The current model** (`ModelCatalog`, `ModelResolver`). OpenAI and Gemini have curated families: OpenAI `sol`
+(balanced, recommended), `astra` (most capable), `luna` (cheapest), matching `gpt-<version>-<tier>`; Gemini `flash`
+(recommended), `pro`, `flash-lite`, matching `gemini-<version>-<tier>[-preview…]`. Only exact aliases match (no dated
+snapshots or audio/realtime variants). The automatic choice is the highest version among the provider's listed models
+that have a published price, preferring stable models (a preview only when the family has no stable one). The list is
+read at most once a day per family, hourly while it can't be read; a change is logged (`Shoal AI: the current openai
+model for … is gpt-6-sol (was …)`). Without a list, the last choice or the family's built-in fallback
+(`gpt-6-sol`, `gemini-3.8-flash` …, each priced in the shipped table) is used. A pinned model (`ProviderSettings.Model`)
+always wins. Claude keeps its fixed default for now.
+
+**Unmetered services.** An OpenAI-compatible service whose address is local (common's `NetworkAddress.IsLocal`: loopback,
+private, link-local and unique-local addresses, `localhost`, `.local`), or that is marked **free**, is wrapped in
+`FreeModel`: no reservation, no ledger entry, no limit, and the call log marks it free. Its limit row is ignored.
+
+**Addresses.** A compatible service's address must be `http(s)` with no user name, password, query or fragment, and
+plain `http://` only for a local address (`ProviderRules.AddressProblem`), so a key never crosses the internet in plain
+text. Checked when saving (an error) and before each call.
+
+## Provider health
+
+`Health.ProviderHealthLog` (`health.json`) keeps, per provider, calls and failures per hour for a day, successes in a
+row, the last success and failure, and when the key was last refused or the allowance found used up. It is fed from
+each call-log entry (also when the call log is off); refusals by this plugin's own limits, cancelled calls and calls
+that never reached a provider aren't counted. A problem is **systemic** when the key was refused or the allowance used
+up within the day with no success since, or 5 calls failed in the day, or half of at least 4; three successes in a row
+clear it, and so does saving or clearing the key. `GET Ai/Health` returns the systemic problems of providers that are
+switched on (a banner at the top of the settings page) and every provider's record. The banner's text is per provider:
+where to replace the key or top up (console.anthropic.com, platform.openai.com, Google AI Studio), the provider's status
+page, whether a pinned model may have been retired, or whether a local service is running at its address. Transient
+failures stay out of it.
 
 ## Spending limits (COM-02)
 
@@ -49,9 +81,12 @@ retired by the provider.
   reservation; any other failure is settled at the estimate, since it may have been billed. The ledger, rates and
   prices live in common's `SpendingStore`, which also refreshes the rates when due and gives the settings page its
   currency list (in the `Ai/Spending` reply). The ledger is persisted atomically.
-- **Prices** come from the response where the provider gives them, else the provider's usage API, else a price table
-  shipped in the plugin (validated; pinned by version). If prices can't be loaded, they are unknown and paid calls stop;
-  never assume zero.
+- **Prices** come from the response where the provider gives them (OpenRouter's `usage.cost`), else the tokens used ×
+  a price table shipped in the plugin (validated; pinned by version, 2026-09-28: Claude, OpenAI's GPT-6 to GPT-5 and
+  Gemini 3.8 to 2.5), or for a remote OpenAI-compatible service the prices entered on the settings page (the table
+  doesn't know its models). A reply without token counts is settled at its estimate. If prices can't be loaded, they
+  are unknown and paid calls stop; never assume zero. The dated snapshot a provider names in its reply
+  (`gpt-6-sol-2026-07-01`) is priced as the model asked for.
 
 ## Spending entry point
 
@@ -137,3 +172,10 @@ choice and nothing was sent.
 Shared failure classes and back-off from jellyfin-plugin-common: no connection (wait and probe, alert now), transient
 (short jittered retries, alert if it persists), provider limit (trust the stated reset, bounded to 31 days; otherwise
 hours to days), authentication (no retry; alert), bad request (fail that request only).
+
+Every provider's HTTP failures go through common's `HttpFailure.Classify` and `RetryAfter`, then
+`Models.ProviderErrors` words them alike ("OpenAI's quota or credit is used up (it says to try again in about 2
+hours)"); the wait is kept on `AiException.RetryAfter`. Provider-specific readings on top: Gemini's bad key is a 400
+`API_KEY_INVALID` (authentication), `FAILED_PRECONDITION` (billing not set up, region) is a provider limit, and a 429
+with a `retryDelay` of a minute or less that doesn't mention a daily allowance or billing is a short rate limit
+(transient), not a used-up quota. Key-shaped text is redacted from every message before it is kept.
