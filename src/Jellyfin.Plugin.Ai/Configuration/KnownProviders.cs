@@ -12,10 +12,10 @@ public static class KnownProviders
     /// <summary>Anthropic (Claude). The default: Claude Opus 5.5 unless another model is named.</summary>
     public const string Anthropic = "anthropic";
 
-    /// <summary>OpenAI.</summary>
+    /// <summary>OpenAI (GPT), through the official OpenAI SDK.</summary>
     public const string OpenAi = "openai";
 
-    /// <summary>Google (Gemini).</summary>
+    /// <summary>Google (Gemini), through the Gemini API.</summary>
     public const string Google = "google";
 
     /// <summary>Any service with an OpenAI-compatible API: a local server (Ollama …), OpenRouter, Groq ….</summary>
@@ -35,17 +35,18 @@ public static class KnownProviders
 
     /// <summary>
     /// Gets every known provider id, in the fixed order the settings keep and show them. The order isn't a preference:
-    /// each request uses the one provider that can answer it.
+    /// which provider answers is <see cref="PluginConfiguration.DefaultProvider"/>, then
+    /// <see cref="PluginConfiguration.FallbackProviders"/>.
     /// </summary>
     public static IReadOnlyList<string> All { get; } = [Anthropic, OpenAi, Google, OpenAiCompatible];
 
     /// <summary>
-    /// Whether a provider can be used in this version. The others can't be set up yet (the settings page shows them as
-    /// coming later) and are left out of the spending checks; whatever was saved for them is kept.
+    /// Whether a provider can be used in this version: every known AI provider since 0.6 (a provider that isn't ready yet
+    /// would be left out of the spending checks, with whatever was saved for it kept).
     /// </summary>
     /// <param name="id">Provider id.</param>
     /// <returns><c>true</c> if calls to it are made.</returns>
-    public static bool IsAvailable(string? id) => string.Equals(id, Anthropic, StringComparison.Ordinal);
+    public static bool IsAvailable(string? id) => IsKnown(id);
 
     /// <summary>
     /// Whether an id is a known provider.
@@ -60,6 +61,23 @@ public static class KnownProviders
     /// <param name="id">Provider id.</param>
     /// <returns><c>true</c> if it is.</returns>
     public static bool IsSpeech(string? id) => id is not null && Speech.Contains(id, StringComparer.Ordinal);
+
+    /// <summary>
+    /// A provider's name for people.
+    /// </summary>
+    /// <param name="id">Provider id.</param>
+    /// <returns>E.g. <c>Anthropic</c>, <c>OpenAI-compatible service</c>.</returns>
+    public static string NameOf(string? id) => id switch
+    {
+        Anthropic => "Anthropic",
+        OpenAi => "OpenAI",
+        Google => "Google Gemini",
+        OpenAiCompatible => "OpenAI-compatible service",
+        Deepgram => "Deepgram speech-to-text",
+        OpenAiSpeech => "OpenAI speech-to-text",
+        null or "" => "Unknown provider",
+        _ => id,
+    };
 
     /// <summary>
     /// The default settings for a provider: Anthropic is allowed (it still needs a key), the others are off.

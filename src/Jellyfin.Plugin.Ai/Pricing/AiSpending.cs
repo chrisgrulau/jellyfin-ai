@@ -79,9 +79,10 @@ public sealed class AiSpending : IDisposable
     /// <param name="model">Model.</param>
     /// <param name="inputChars">Characters sent.</param>
     /// <param name="maxOutputTokens">Output allowance.</param>
+    /// <param name="custom">Prices entered on the settings page (an OpenAI-compatible service), used instead of the table.</param>
     /// <returns>The estimate, or <c>null</c> if the price is unknown.</returns>
-    internal Money? Estimate(string provider, string model, int inputChars, int maxOutputTokens)
-        => Cost(provider, model, (inputChars / 3) + 200, maxOutputTokens);
+    internal Money? Estimate(string provider, string model, int inputChars, int maxOutputTokens, ModelPrice? custom = null)
+        => Cost(provider, model, (inputChars / 3) + 200, maxOutputTokens, custom);
 
     /// <summary>
     /// What a call cost from its token counts.
@@ -90,9 +91,15 @@ public sealed class AiSpending : IDisposable
     /// <param name="model">Model.</param>
     /// <param name="inputTokens">Input tokens.</param>
     /// <param name="outputTokens">Output tokens.</param>
+    /// <param name="custom">Prices entered on the settings page (an OpenAI-compatible service), used instead of the table.</param>
     /// <returns>The cost, or <c>null</c> if the price is unknown.</returns>
-    internal Money? Cost(string provider, string model, long inputTokens, long outputTokens)
+    internal Money? Cost(string provider, string model, long inputTokens, long outputTokens, ModelPrice? custom = null)
     {
+        if (custom is not null)
+        {
+            return new Money(((custom.InputPerMillion * inputTokens) + (custom.OutputPerMillion * outputTokens)) / 1_000_000m, custom.Currency);
+        }
+
         if (Prices?.PriceOf(provider, model, PriceTable.InputMillionTokens) is not { } input
             || Prices.PriceOf(provider, model, PriceTable.OutputMillionTokens) is not { } output
             || input.Currency != output.Currency)

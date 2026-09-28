@@ -61,10 +61,10 @@ public static class AiBridge
     // Data passed on to the model: the same encoder as the callers' requests, so </data> can't appear inside it
     private static readonly JsonSerializerOptions Json = new() { Encoder = JavaScriptEncoder.Create(UnicodeRanges.All) };
 
-    private static ApiKeyStore? _keys;
-    private static AiSpending? _spending;
+    private static ModelServices? _services;
     private static IHttpClientFactory? _http;
     private static CallLog? _log;
+    private static Health.ProviderHealthLog? _health;
 
     /// <summary>
     /// Answers a request from another plugin.
@@ -74,12 +74,12 @@ public static class AiBridge
     /// <returns>The reply, as JSON. Never throws for a bad request or a failed call.</returns>
     public static async Task<string> AskAsync(string requestJson, CancellationToken cancellationToken)
     {
-        if (_keys is null || _spending is null || AiPlugin.Instance?.Configuration is not { } config)
+        if (_services is null || AiPlugin.Instance?.Configuration is not { } config)
         {
             return Failed("The AI plugin isn't ready yet.", "transient");
         }
 
-        return await AnswerAsync(requestJson, config, _keys, _spending, _log, null, cancellationToken).ConfigureAwait(false);
+        return await AnswerAsync(requestJson, config, _services, _log, _health, null, cancellationToken).ConfigureAwait(false);
     }
 
     /// <summary>
@@ -90,10 +90,10 @@ public static class AiBridge
     /// <param name="keys">The key store.</param>
     /// <param name="spending">Prices, ledger and rates.</param>
     /// <param name="log">The call log, if any.</param>
-    /// <param name="models">Builds the model (for tests), or <c>null</c> for <see cref="AiModels.Create"/>.</param>
+    /// <param name="models">Builds the model for a provider (for tests), or <c>null</c> for <see cref="AiModels.CreateAsync"/>.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>The reply, as JSON.</returns>
-    internal static async Task<string> AnswerAsync(
+    internal static Task<string> AnswerAsync(
         string requestJson,
         PluginConfiguration config,
         ApiKeyStore keys,
@@ -101,23 +101,47 @@ public static class AiBridge
         CallLog? log,
         Func<string, (IAiModel? Model, string? Problem)>? models,
         CancellationToken cancellationToken)
+        => AnswerAsync(requestJson, config, new ModelServices(keys, spending), log, null, models is null ? null : (p, _) => Task.FromResult(models(p)), cancellationToken);
+
+    /// <summary>
+    /// Answers a request: checks it, then asks the providers in the order the settings give (the default one, then the
+    /// fallbacks) until one answers. A provider that can't be used (not set up, no key), can't be reached, refused the key,
+    /// is out of credit, over a spending limit or failing for now is passed over for the next; a request that was
+    /// answered but couldn't be used (and so was charged), or that was rejected as a bad request, isn't sent elsewhere.
+    /// </summary>
+    /// <param name="requestJson">The request.</param>
+    /// <param name="config">The settings.</param>
+    /// <param name="services">Keys, spending, the model resolver and HTTP clients.</param>
+    /// <param name="log">The call log, if any.</param>
+    /// <param name="health">Each provider's recent record, if kept (recorded through the call log).</param>
+    /// <param name="models">Builds the model for a provider (for tests), or <c>null</c> for <see cref="AiModels.CreateAsync"/>.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>The reply, as JSON.</returns>
+    internal static async Task<string> AnswerAsync(
+        string requestJson,
+        PluginConfiguration config,
+        ModelServices services,
+        CallLog? log,
+        Health.ProviderHealthLog? health,
+        Func<string, CancellationToken, Task<(IAiModel? Model, string? Problem)>>? models,
+        CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(config);
-        ArgumentNullException.ThrowIfNull(keys);
-        ArgumentNullException.ThrowIfNull(spending);
-        if (Parse(requestJson, config, out var request, out var provider) is { } problem)
+        ArgumentNullException.ThrowIfNull(services);
+        var (keys, spending) = (services.Keys, services.Spending);
+        if (Parse(requestJson, config, out var request, out var first) is { } problem)
         {
             // Switched off or not allowed is the administrator's choice, not an error, and nothing was sent: not logged
             if (log is not null && problem.Failure != "off")
             {
                 var (caller, purpose) = CallerOf(requestJson);
-                log.RecordProblem(Context(caller, config, keys, spending, provider), purpose, provider, Encoding.UTF8.GetByteCount(requestJson ?? string.Empty), problem.Message, problem.Failure);
+                log.RecordProblem(Context(caller, config, keys, spending, first, health), purpose, first, Encoding.UTF8.GetByteCount(requestJson ?? string.Empty), problem.Message, problem.Failure);
             }
 
             return Failed(problem.Message, problem.Failure);
         }
 
-        var context = Context(request!.Purpose[..request.Purpose.IndexOf('.', StringComparison.Ordinal)], config, keys, spending, provider);
+        var callerName = request!.Purpose[..request.Purpose.IndexOf('.', StringComparison.Ordinal)];
 
         // Exchange rates are needed to price the call in the user's currency: the shared store refreshes them about once
         // a day, and at most every 30 minutes while they are missing or stale (AI-02, FAM-06). It never throws for network
@@ -126,64 +150,93 @@ public static class AiBridge
         {
             using var http = _http.CreateClient();
             await spending.Store.CurrentRatesAsync(http, cancellationToken).ConfigureAwait(false);
-            context = context with { Rates = spending.Rates.Current };
         }
 
-        var (model, why) = models is not null ? models(provider!) : AiModels.Create(config, provider!, null, keys, spending);
-        if (model is null)
+        var context = Context(callerName, config, keys, spending, first, health);
+        (string Message, string Failure)? last = null;
+        foreach (var provider in ProviderRules.Order(config))
         {
-            log?.RecordProblem(context, request.Purpose, provider, 0, why ?? "No AI provider can be used.", "not-configured");
-            return Failed(why ?? "No AI provider can be used.", "not-configured");
-        }
+            var (model, why) = models is not null
+                ? await models(provider, cancellationToken).ConfigureAwait(false)
+                : await AiModels.CreateAsync(config, provider, null, services, null, cancellationToken).ConfigureAwait(false);
 
-        try
-        {
-            var answer = log is null
-                ? await model.AskAsync(request, cancellationToken).ConfigureAwait(false)
-                : await log.AskAsync(model, request, context, cancellationToken).ConfigureAwait(false);
-            return Answered(answer.Json, answer.Model);
-        }
-        catch (AiException ex)
-        {
-            return Failed(ex.Message, Name(ex.Failure));
-        }
+            if (model is null)
+            {
+                log?.RecordProblem(context, request.Purpose, provider, 0, why ?? "No AI provider can be used.", "not-configured");
+                last = (why ?? "No AI provider can be used.", "not-configured");
+                continue;
+            }
+
+            try
+            {
+                var answer = log is null
+                    ? await model.AskAsync(request, cancellationToken).ConfigureAwait(false)
+                    : await log.AskAsync(model, request, context, cancellationToken).ConfigureAwait(false);
+                return Answered(answer.Json, answer.Model);
+            }
+            catch (AiException ex) when (FallsBack(ex))
+            {
+                // Another provider may still answer: this one's failure is kept, in case none does
+                last = (ex.Message, Name(ex.Failure));
+            }
+            catch (AiException ex)
+            {
+                return Failed(ex.Message, Name(ex.Failure));
+            }
 #pragma warning disable CA1031 // The entry point is documented never to throw: anything unexpected is a transient failure
-        catch (Exception ex) when (ex is not OperationCanceledException)
+            catch (Exception ex) when (ex is not OperationCanceledException)
 #pragma warning restore CA1031
-        {
-            return Failed("The AI plugin failed (" + ex.GetType().Name + ").", "transient");
+            {
+                return Failed("The AI plugin failed (" + ex.GetType().Name + ").", "transient");
+            }
+            finally
+            {
+                (model as IDisposable)?.Dispose();
+            }
         }
-        finally
-        {
-            (model as IDisposable)?.Dispose();
-        }
+
+        return last is { } l ? Failed(l.Message, l.Failure) : Failed("No usable AI provider is switched on.", "not-configured");
+    }
+
+    /// <summary>
+    /// Whether a failure leaves the request to the next provider: the provider couldn't be used or reached, refused the
+    /// key, is out of credit or over a limit (its own or the spending limits here), or is failing for now. Not for a
+    /// rejected request (it would be rejected elsewhere too) or a reply that was charged (it would be paid for twice).
+    /// </summary>
+    /// <param name="ex">The failure.</param>
+    /// <returns><c>true</c> to try the next provider.</returns>
+    internal static bool FallsBack(AiException ex)
+    {
+        ArgumentNullException.ThrowIfNull(ex);
+        return !ex.Charged && ex.Failure is not FailureClass.BadRequest;
     }
 
     /// <summary>
     /// Connects the entry point to the plugin's services (at start-up).
     /// </summary>
-    /// <param name="keys">The key store.</param>
-    /// <param name="spending">Prices, ledger and rates.</param>
+    /// <param name="services">Keys, spending, the model resolver and HTTP clients.</param>
     /// <param name="http">HTTP clients (for exchange rates), if available.</param>
     /// <param name="log">The call log, if any.</param>
-    internal static void Attach(ApiKeyStore keys, AiSpending spending, IHttpClientFactory? http = null, CallLog? log = null)
+    /// <param name="health">Each provider's recent record, if kept.</param>
+    internal static void Attach(ModelServices services, IHttpClientFactory? http = null, CallLog? log = null, Health.ProviderHealthLog? health = null)
     {
-        _keys = keys;
-        _spending = spending;
+        _services = services;
         _http = http;
         _log = log;
+        _health = health;
     }
 
     /// <summary>
-    /// What a call is recorded with: the caller, whether to log, the limits, rates and the key to redact.
+    /// What a call is recorded with: the caller, whether to log, the limits, rates and the keys to redact.
     /// </summary>
     /// <param name="caller">Who asked.</param>
     /// <param name="config">The settings.</param>
     /// <param name="keys">The key store.</param>
     /// <param name="spending">Prices, ledger and rates.</param>
     /// <param name="provider">The provider, if chosen.</param>
+    /// <param name="health">Each provider's recent record, if kept.</param>
     /// <returns>The context.</returns>
-    internal static CallContext Context(string? caller, PluginConfiguration config, ApiKeyStore keys, AiSpending spending, string? provider)
+    internal static CallContext Context(string? caller, PluginConfiguration config, ApiKeyStore keys, AiSpending spending, string? provider, Health.ProviderHealthLog? health = null)
     {
         ArgumentNullException.ThrowIfNull(config);
         ArgumentNullException.ThrowIfNull(keys);
@@ -193,7 +246,8 @@ public static class AiBridge
             config.KeepCallLog,
             AiSpending.LimitsOf(config),
             spending.Rates.Current,
-            KnownProviders.All.Select(keys.Get).Where(k => k is not null).ToList());
+            KnownProviders.All.Select(keys.Get).Where(k => k is not null).ToList(),
+            health);
     }
 
     // The caller and purpose of a request that couldn't be read in full, for the log (never its other fields)
@@ -222,7 +276,7 @@ public static class AiBridge
     /// <param name="json">The request.</param>
     /// <param name="config">The settings.</param>
     /// <param name="request">The request, when valid.</param>
-    /// <param name="provider">The provider to use.</param>
+    /// <param name="provider">The provider asked first (the default, or the first switched on).</param>
     /// <returns>Why it can't be answered, or <c>null</c> when it can.</returns>
     internal static Problem? Parse(string? json, PluginConfiguration config, out AiRequest? request, out string? provider)
     {
@@ -296,10 +350,11 @@ public static class AiBridge
             return new(string.Create(CultureInfo.InvariantCulture, $"The request's instructions, data or schema are missing or too large (data {dataBytes:N0} of {MaxData:N0} bytes)."), "bad-request");
         }
 
-        provider = config.Providers.FirstOrDefault(p => p is { Enabled: true } && KnownProviders.IsAvailable(p.Id))?.Id;
+        var order = ProviderRules.Order(config);
+        provider = order.Count > 0 ? order[0] : null;
         if (provider is null)
         {
-            return new("No usable AI provider is switched on (only Anthropic Claude is supported so far).", "not-configured");
+            return new("No usable AI provider is switched on (see Providers on the AI settings page).", "not-configured");
         }
 
         using var schemaDoc = JsonDocument.Parse(schemaText);
@@ -404,10 +459,13 @@ internal sealed class AiBridgeHost : Microsoft.Extensions.Hosting.IHostedService
     /// <param name="spending">Prices, ledger and rates.</param>
     /// <param name="http">HTTP clients.</param>
     /// <param name="log">The call log.</param>
-    public AiBridgeHost(ApiKeyStore keys, AiSpending spending, IHttpClientFactory http, CallLog log)
+    /// <param name="resolver">Resolves "the current model" of a family.</param>
+    /// <param name="health">Each provider's recent record.</param>
+    public AiBridgeHost(ApiKeyStore keys, AiSpending spending, IHttpClientFactory http, CallLog log, ModelResolver resolver, Health.ProviderHealthLog health)
     {
+        ArgumentNullException.ThrowIfNull(http);
         _log = log;
-        AiBridge.Attach(keys, spending, http, log);
+        AiBridge.Attach(new ModelServices(keys, spending, resolver, () => http.CreateClient()), http, log, health);
         SpendingBridge.Attach(spending, http);
     }
 

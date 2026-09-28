@@ -10,15 +10,16 @@ namespace Jellyfin.Plugin.Ai.Models;
 /// <summary>
 /// A paid model kept within the spending limits: each call's most it could cost (input plus the whole output
 /// allowance) is reserved before it is made, and what it actually cost (from the reply's token counts) is recorded
-/// afterwards, also when a billed reply turns out unusable; a call that was never answered is released, and one that
+/// afterwards (or what the provider said it cost, when it says), also when a billed reply turns out unusable; a call that was never answered is released, and one that
 /// failed unexpectedly is recorded at the estimate (it may have been billed). Unknown prices or exchange rates, or going
 /// over a limit, mean no call.
 /// </summary>
-public sealed class MeteredModel : IAiModel
+public sealed class MeteredModel : IAiModel, IDisposable
 {
     private readonly IAiModel _inner;
     private readonly AiSpending _spending;
     private readonly SpendLimits _limits;
+    private readonly ModelPrice? _custom;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="MeteredModel"/> class.
@@ -26,8 +27,10 @@ public sealed class MeteredModel : IAiModel
     /// <param name="inner">The paid model.</param>
     /// <param name="spending">Prices, ledger and rates.</param>
     /// <param name="limits">The limits.</param>
-    internal MeteredModel(IAiModel inner, AiSpending spending, SpendLimits limits)
+    /// <param name="custom">Prices entered on the settings page (an OpenAI-compatible service), instead of the table's.</param>
+    internal MeteredModel(IAiModel inner, AiSpending spending, SpendLimits limits, ModelPrice? custom = null)
     {
+        _custom = custom;
         _inner = inner ?? throw new ArgumentNullException(nameof(inner));
         _spending = spending ?? throw new ArgumentNullException(nameof(spending));
         _limits = limits ?? throw new ArgumentNullException(nameof(limits));
@@ -46,7 +49,7 @@ public sealed class MeteredModel : IAiModel
     public async Task<AiAnswer> AskAsync(AiRequest request, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(request);
-        if (_spending.Estimate(Provider, Model, request.Instructions.Length + request.Data.Length + 200, request.MaxOutputTokens) is not { } estimate)
+        if (_spending.Estimate(Provider, Model, request.Instructions.Length + request.Data.Length + 200, request.MaxOutputTokens, _custom) is not { } estimate)
         {
             throw new AiException("There's no published price for " + Model + ", so it isn't used.") { Failure = FailureClass.BadRequest };
         }
@@ -57,7 +60,7 @@ public sealed class MeteredModel : IAiModel
         {
             // Answered and billed, but unusable (a refusal, cut off, unreadable): recorded at what it used (AI-04)
             IsCharged = static ex => ex is AiException { Charged: true },
-            ChargedCost = ex => ex is AiException a ? CostOf(a.ChargedModel, a.InputTokens, a.OutputTokens) : null,
+            ChargedCost = ex => ex is AiException a ? a.ChargedCost ?? CostOf(a.ChargedModel, a.InputTokens, a.OutputTokens) : null,
 
             // Refused or never answered: not charged. Anything else may have been billed, so it counts at the estimate
             IsUncharged = static ex => ex is AiException or OperationCanceledException,
@@ -73,13 +76,17 @@ public sealed class MeteredModel : IAiModel
             request.Purpose,
             estimate,
             ct => _inner.AskAsync(request, ct),
-            answer => CostOf(answer.Model, answer.InputTokens, answer.OutputTokens),
+            // What the provider said it cost, else tokens × price; a reply without token counts is recorded at the estimate
+            answer => answer.ReportedCost ?? (answer.UsageKnown ? CostOf(answer.Model, answer.InputTokens, answer.OutputTokens) : null),
             options,
             cancellationToken).ConfigureAwait(false);
     }
 
+    /// <inheritdoc />
+    public void Dispose() => (_inner as IDisposable)?.Dispose();
+
     // A billed call's actual cost: the answering model's price, else the requested model's (else the estimate, in MeteredCall)
     private Money? CostOf(string? model, long inputTokens, long outputTokens)
-        => (model is null ? null : _spending.Cost(Provider, model, inputTokens, outputTokens))
-            ?? _spending.Cost(Provider, Model, inputTokens, outputTokens);
+        => (model is null ? null : _spending.Cost(Provider, model, inputTokens, outputTokens, _custom))
+            ?? _spending.Cost(Provider, Model, inputTokens, outputTokens, _custom);
 }

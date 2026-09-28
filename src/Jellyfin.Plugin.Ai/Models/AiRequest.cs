@@ -53,7 +53,17 @@ public sealed record AiRequest
 /// <param name="Model">The model that answered.</param>
 /// <param name="InputTokens">Input tokens billed.</param>
 /// <param name="OutputTokens">Output tokens billed (thinking included).</param>
-public sealed record AiAnswer(JsonElement Json, string Provider, string Model, long InputTokens, long OutputTokens);
+public sealed record AiAnswer(JsonElement Json, string Provider, string Model, long InputTokens, long OutputTokens)
+{
+    /// <summary>
+    /// Gets what the provider said the call cost (OpenRouter and some other services report it), which is recorded
+    /// instead of the tokens × price estimate.
+    /// </summary>
+    internal Common.Costs.Money? ReportedCost { get; init; }
+
+    /// <summary>Gets a value indicating whether the reply said how many tokens it used (some local services don't).</summary>
+    internal bool UsageKnown { get; init; } = true;
+}
 
 /// <summary>
 /// A request couldn't be answered. The message is safe to show and log.
@@ -92,6 +102,12 @@ public sealed class AiException : Exception
 
     /// <summary>Gets the model that was billed, when <see cref="Charged"/> and the provider named it.</summary>
     internal string? ChargedModel { get; init; }
+
+    /// <summary>Gets what the provider said the billed call cost, when <see cref="Charged"/> and it said.</summary>
+    internal Common.Costs.Money? ChargedCost { get; init; }
+
+    /// <summary>Gets how long the provider asked to wait before trying again, if it said (a rate limit or used-up quota).</summary>
+    internal TimeSpan? RetryAfter { get; init; }
 
     /// <summary>
     /// Gets a value indicating whether the spending limits refused the call before anything was sent (its

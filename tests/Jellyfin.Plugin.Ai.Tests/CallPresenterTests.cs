@@ -144,7 +144,7 @@ public sealed class CallPresenterTests
     [InlineData("not-configured", "No AI provider can be used.", "not set up")]
     [InlineData("not-configured", "No API key is set for Claude.", "no API key")]
     [InlineData("no-connection", null, "couldn't reach the provider")]
-    [InlineData("provider-limit", null, "provider's rate limit")]
+    [InlineData("provider-limit", null, "provider's quota or credit used up")]
     [InlineData("transient", null, "temporary problem")]
     [InlineData("cancelled", null, "cancelled")]
     [InlineData("something-new", null, "something-new")]

@@ -146,7 +146,7 @@ internal static class CallPresenter
     internal static string Failure(string? failure, string? error) => failure switch
     {
         "authentication" => "API key rejected",
-        "provider-limit" => "provider's rate limit",
+        "provider-limit" => "provider's quota or credit used up",
         "bad-request" => "request rejected",
         "no-connection" => "couldn't reach the provider",
         "not-configured" => error is not null && error.Contains("key", StringComparison.OrdinalIgnoreCase) ? "no API key" : "not set up",
@@ -164,6 +164,11 @@ internal static class CallPresenter
     internal static string CompactCost(CallEntry entry)
     {
         ArgumentNullException.ThrowIfNull(entry);
+        if (entry.Unmetered == true)
+        {
+            return "free";
+        }
+
         if (entry.DisplayCost is { } shown && !string.IsNullOrEmpty(entry.DisplayCurrency))
         {
             return Money(shown, entry.DisplayCurrency);
@@ -266,6 +271,10 @@ internal static class CallPresenter
             {
                 Add("Cost (your currency)", Exact(shown, entry.DisplayCurrency));
             }
+        }
+        else if (entry.Unmetered == true)
+        {
+            Add("Cost", "free (local or free service, not metered)");
         }
         else
         {

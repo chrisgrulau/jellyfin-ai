@@ -13,9 +13,9 @@ A [Jellyfin](https://jellyfin.org) plugin that gives the other plugins in the fa
 optional, budget-controlled access to AI models, for decisions they can't make on their own: which of two close
 candidate titles a release is, or whether a subtitle really matches the dialogue.
 
-> **Status:** alpha. Claude calls within the spending limits, a prepaid-credit countdown and the entry point the other
-> plugins use are in place. OpenAI, Google and OpenAI-compatible providers are coming later: the settings page lists
-> them, but they can't be set up or used yet.
+> **Status:** alpha. Anthropic (Claude), OpenAI, Google Gemini and OpenAI-compatible services (a local Ollama server,
+> OpenRouter, Groq …) within the spending limits, a default provider with fallbacks, a prepaid-credit countdown, provider
+> health with a banner, and the entry point the other plugins use are in place.
 
 ## Installing
 
@@ -25,23 +25,37 @@ catalogue and restart Jellyfin. Updates install automatically unless you switch 
 Plugins**.
 
 **By hand:** download `jellyfin-plugin-ai.zip` from the [releases](../../releases), check it against `SHA256SUMS` (and,
-if you like, `gh attestation verify jellyfin-plugin-ai.zip --repo chrisgrulau/jellyfin-ai`), and put **all three DLLs**
-it contains (`Jellyfin.Plugin.Ai.dll`, `Anthropic.dll`, `Microsoft.Extensions.AI.Abstractions.dll`) in
-`<jellyfin data>/plugins/AI_<version>/`, then restart Jellyfin.
+if you like, `gh attestation verify jellyfin-plugin-ai.zip --repo chrisgrulau/jellyfin-ai`), and put **all six DLLs**
+it contains (`Jellyfin.Plugin.Ai.dll`, `Anthropic.dll`, `Microsoft.Extensions.AI.Abstractions.dll`, `OpenAI.dll`,
+`System.ClientModel.dll`, `System.Memory.Data.dll`) in `<jellyfin data>/plugins/AI_<version>/`, then restart Jellyfin.
 
-Then open **Dashboard → Plugins → Shoal AI**: add a Claude API key, press **Test**, and allow Ingest and Subtitles to use
-it. Nothing is sent anywhere until you do.
+Then open **Dashboard → Plugins → Shoal AI**: add a key for a provider (or the address of a local OpenAI-compatible
+server), press **Test**, choose which provider answers, and allow Ingest and Subtitles to use it. Nothing is sent
+anywhere until you do.
 
-Uninstalling leaves the plugin's data folder (`keys.json`, `spend.json`, `rates.json`, `calls.jsonl`); delete it by hand if you like.
+Uninstalling leaves the plugin's data folder (`keys.json`, `spend.json`, `rates.json`, `calls.jsonl`, `health.json`); delete it by hand if you like.
 
 ## How it fits together
 
 - **Optional everywhere.** Ingest and Subtitles work fully without this plugin. When it is installed, and you allow
   them to, they ask it for a tiebreak; otherwise they leave hard cases for your review, as before.
-- **Providers.** Anthropic (Claude), using Claude Opus 5.5 unless you name another model (USD 4 / 20 per million input
-  / output tokens; a tie-break costs a fraction of a cent, a transcript comparison a few cents). OpenAI, Google (Gemini)
-  and OpenAI-compatible services (a local server such as Ollama, or OpenRouter …) are coming later: the settings page
-  shows them, but they can't be set up or used yet. Naming a model pins it: it may cost more, and the provider may retire it.
+- **Providers.**
+  - **Anthropic (Claude)**, using Claude Opus 5.5 unless you pin another model (USD 4 / 20 per million input / output
+    tokens; a tie-break costs a fraction of a cent, a transcript comparison a few cents).
+  - **OpenAI (GPT)** and **Google Gemini**: you choose the kind of model (OpenAI: balanced, most capable or cheapest;
+    Gemini: Flash, Pro or Flash-Lite) and the plugin uses the newest one of that kind the provider offers, checked once a
+    day (a change is noted in the server log). By default GPT-6 Sol (USD 2 / 10) and Gemini 3.8 Flash (USD 0.75 / 3.75).
+  - **Any OpenAI-compatible service**: a local server such as Ollama, LM Studio or vLLM, or OpenRouter, Groq and the
+    like. Enter its address, the model and a key if it needs one. On this machine or the local network it is free and
+    has no limit; a remote one needs its prices (under Advanced) or to be marked free, and if it reports what each call
+    cost (OpenRouter does) that is what's recorded.
+
+  Pinning a model (under Advanced) overrides the automatic choice: it may cost more, and the provider may retire it.
+- **Which provider answers.** One provider answers (Anthropic unless you choose another), and you can name up to three
+  to try next if it can't: when it isn't set up, can't be reached, refuses the key, is out of credit or over its limit,
+  or is failing for now. A request it answered but that couldn't be used isn't sent again (it was already paid for).
+- **Problems are shown, not hidden.** A refused key, used-up credit or repeated failures put a banner at the top of the
+  settings page saying what to do for that provider; a one-off failure (retried anyway) stays in the call log only.
 - **Spending limits** in your own currency: an overall monthly limit for all paid providers (5 a month by default; 0
   means no paid use; "no limit" is an explicit choice with a warning), plus, if you like, a limit per provider as an
   amount or a share of the overall limit. Providers' charges (usually US dollars) are converted with the European
@@ -90,9 +104,10 @@ last 30 days (at most 1 MB). Switch it off with **Keep a log of AI calls**, or e
 **Dashboard → Plugins → Shoal AI.** The page is grouped into sections you can fold away; the everyday ones are open:
 
 - **What may use AI:** allow Ingest and Subtitles (**What is sent** explains what each sends).
-- **Providers and keys:** each provider's key, **Test**, and, folded away, the model and a prepaid credit to count down
-  (the amount, the currency it was bought in, usually US dollars, and the date). Providers are listed in a fixed order,
-  not an order of preference; for now Anthropic (Claude) is the only one that can be used.
+- **Providers and keys:** which provider answers and which to try next; for each provider its key, the kind of model
+  (or a compatible service's address and model), **Test** (shows the reply and what it cost) and, under **Advanced**, a
+  pinned model with **List available models**, a prepaid credit to count down (the amount, the currency it was bought
+  in, usually US dollars, and the date), or a compatible service's prices and **This service is free**.
 - **Spending:** this month's spending against the limit, the currency, the overall monthly limit and whether Subtitles'
   paid speech-to-text uses this budget; folded away, a limit per provider (Deepgram and OpenAI speech-to-text are
   listed while Subtitles is installed) and a percentage for taxes or card fees.
@@ -104,7 +119,7 @@ logged or included in exports; the settings page can only replace or clear them.
 ## Requirements
 
 - Jellyfin 12.1
-- An Anthropic API key (other providers are coming later)
+- An API key for Anthropic, OpenAI or Google Gemini, or an OpenAI-compatible service (a local one needs no key)
 
 ## Building
 

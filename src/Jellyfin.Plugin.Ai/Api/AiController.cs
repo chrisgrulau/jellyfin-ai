@@ -32,16 +32,22 @@ public class AiController : ControllerBase
     private readonly Pricing.AiSpending _spending;
     private readonly IHttpClientFactory _http;
     private readonly CallLog _log;
+    private readonly Models.ModelResolver _resolver;
+    private readonly Health.ProviderHealthLog _health;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="AiController"/> class.
     /// </summary>
     /// <param name="keys">The key store.</param>
     /// <param name="spending">Prices, spend ledger and exchange rates.</param>
-    /// <param name="http">HTTP client factory (for exchange rates).</param>
+    /// <param name="http">HTTP client factory (for exchange rates and Gemini calls).</param>
     /// <param name="log">The call log.</param>
-    public AiController(ApiKeyStore keys, Pricing.AiSpending spending, IHttpClientFactory http, CallLog log)
+    /// <param name="resolver">Resolves "the current model" of a family.</param>
+    /// <param name="health">Each provider's recent record.</param>
+    public AiController(ApiKeyStore keys, Pricing.AiSpending spending, IHttpClientFactory http, CallLog log, Models.ModelResolver resolver, Health.ProviderHealthLog health)
     {
+        _resolver = resolver ?? throw new ArgumentNullException(nameof(resolver));
+        _health = health ?? throw new ArgumentNullException(nameof(health));
         _log = log ?? throw new ArgumentNullException(nameof(log));
         _spending = spending ?? throw new ArgumentNullException(nameof(spending));
         _http = http ?? throw new ArgumentNullException(nameof(http));
@@ -80,6 +86,9 @@ public class AiController : ControllerBase
         }
 
         _keys.Set(provider, request.Key!);
+
+        // A new key: an earlier refusal says nothing about it
+        _health.Forget(provider);
         return NoContent();
     }
 
@@ -93,11 +102,13 @@ public class AiController : ControllerBase
     public ActionResult ClearKey([FromRoute] string provider)
     {
         _keys.Clear(provider);
+        _health.Forget(provider);
         return NoContent();
     }
 
     /// <summary>
-    /// Checks that a provider answers, with one tiny request (a fraction of a cent, counted like any other call).
+    /// Checks that a provider answers, with one tiny request (a fraction of a cent, counted like any other call), and shows
+    /// its reply and what it cost.
     /// </summary>
     /// <param name="request">The provider and model to test, as on the settings page.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
@@ -114,8 +125,18 @@ public class AiController : ControllerBase
             await _spending.Rates.RefreshAsync(http, cancellationToken).ConfigureAwait(false);
         }
 
-        var (model, problem) = Models.AiModels.Create(config, request.Provider ?? string.Empty, request.Model, _keys, _spending);
-        var context = Bridge.AiBridge.Context("test", config, _keys, _spending, request.Provider);
+        // What the page shows (an address or prices not saved yet), tidied the way saving would
+        ProviderSettings? unsaved = null;
+        if (request.Settings is { } shown && shown.Id == request.Provider)
+        {
+            var tidy = new PluginConfiguration();
+            tidy.Providers.Add(shown);
+            BudgetRules.Normalise(tidy);
+            unsaved = tidy.Providers.First(p => p.Id == shown.Id);
+        }
+
+        var (model, problem) = await Models.AiModels.CreateAsync(config, request.Provider ?? string.Empty, request.Model, Services(), unsaved, cancellationToken).ConfigureAwait(false);
+        var context = Bridge.AiBridge.Context("test", config, _keys, _spending, request.Provider, _health);
         if (model is null)
         {
             _log.RecordProblem(context, TestPurpose, request.Provider, 0, problem ?? "Can't be used.", "not-configured");
@@ -130,15 +151,23 @@ public class AiController : ControllerBase
                 new Models.AiRequest
                 {
                     Purpose = TestPurpose,
-                    Instructions = "This is a connection test. Answer with ok set to true.",
+                    Instructions = "This is a connection test. Answer with ok set to true and a short greeting of at most five words.",
                     Data = "{}",
                     Schema = TestSchema,
                     MaxOutputTokens = 1024,
                 },
                 context,
                 cancellationToken).ConfigureAwait(false);
-            var cost = (model as Models.MeteredModel)?.LastCost;
-            return new TestResult(true, string.Create(CultureInfo.InvariantCulture, $"Connected: {answer.Model} answered in {clock.Elapsed.TotalSeconds:0.0} s ({answer.InputTokens} + {answer.OutputTokens} tokens{(cost is { } c ? ", " + c : string.Empty)})."));
+            var cost = model is Models.FreeModel ? "free (not metered)" : (model as Models.MeteredModel)?.LastCost is { } c ? CostText(c, config) : "cost unknown";
+            var reply = Reply(answer.Json);
+            return new TestResult(
+                true,
+                string.Create(CultureInfo.InvariantCulture, $"Connected: {answer.Model} answered in {clock.Elapsed.TotalSeconds:0.0} s ({answer.InputTokens} + {answer.OutputTokens} tokens, {cost}). It said: {reply}"))
+            {
+                Model = answer.Model,
+                Reply = reply,
+                Cost = cost,
+            };
         }
         catch (Models.AiException ex)
         {
@@ -148,6 +177,131 @@ public class AiController : ControllerBase
         {
             (model as IDisposable)?.Dispose();
         }
+    }
+
+    /// <summary>
+    /// How the providers have been doing: systemic problems (shown as a banner, with what to do) and each provider's
+    /// recent record. Transient failures stay out of the banner.
+    /// </summary>
+    /// <returns>The health.</returns>
+    [HttpGet("Health")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    public ActionResult<HealthView> ProviderHealth()
+    {
+        var config = AiPlugin.Instance?.Configuration ?? new PluginConfiguration();
+        var all = _health.Health(config);
+
+        // A switched-off provider's old trouble isn't worth a banner
+        var on = ProviderRules.Order(config);
+        return new HealthView([.. all.Where(h => h.Systemic && on.Contains(h.Provider))], all);
+    }
+
+    /// <summary>
+    /// A provider's model families and current automatic choice, and the models it offers (for the settings page). Reads
+    /// the provider's model list, with the key saved for it.
+    /// </summary>
+    /// <param name="provider">The provider id.</param>
+    /// <param name="family">The family to resolve (empty for the saved one, then the recommended one).</param>
+    /// <param name="address">An OpenAI-compatible service's address as typed on the page (empty for the saved one).</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>The models.</returns>
+    [HttpGet("Models/{provider}")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    public async Task<ActionResult<ModelsView>> ProviderModels([FromRoute] string provider, [FromQuery] string? family, [FromQuery] string? address, CancellationToken cancellationToken)
+    {
+        if (!KnownProviders.IsKnown(provider))
+        {
+            return BadRequest("Unknown provider.");
+        }
+
+        var config = AiPlugin.Instance?.Configuration ?? new PluginConfiguration();
+        var settings = config.Providers.FirstOrDefault(p => p?.Id == provider) ?? KnownProviders.Default(provider);
+        var families = Models.ModelCatalog.Of(provider).Select(f => new FamilyView(f.Id, f.Label, f.IsDefault)).ToList();
+        var key = _keys.Get(provider);
+        IReadOnlyList<string> listed = [];
+        string? problem = null;
+        using var http = _http.CreateClient();
+        try
+        {
+            switch (provider)
+            {
+                case KnownProviders.OpenAi when key is not null:
+                    listed = await Models.OpenAiChatModel.ListAsync(key, null, null, cancellationToken).ConfigureAwait(false);
+                    break;
+                case KnownProviders.Google when key is not null:
+                    listed = await Models.GeminiModel.ListAsync(key, http, cancellationToken).ConfigureAwait(false);
+                    break;
+                case KnownProviders.OpenAiCompatible:
+                    problem = ProviderRules.AddressProblem(string.IsNullOrWhiteSpace(address) ? settings.BaseUrl : address, out var endpoint);
+                    if (endpoint is not null)
+                    {
+                        listed = await Models.OpenAiChatModel.ListAsync(key, endpoint, null, cancellationToken).ConfigureAwait(false);
+                    }
+
+                    break;
+                case KnownProviders.Anthropic:
+                    problem = "Claude's recommended model is " + Models.ClaudeModel.DefaultModel + ", updated with plugin releases.";
+                    break;
+                default:
+                    problem = "Add an API key first.";
+                    break;
+            }
+        }
+        catch (Models.AiException ex)
+        {
+            problem = ex.Message;
+        }
+
+        string? current = null;
+        if (Models.ModelCatalog.Family(provider, string.IsNullOrWhiteSpace(family) ? settings.Family : family) is { } chosen)
+        {
+            current = listed.Count > 0
+                ? (await _resolver.ResolveAsync(chosen, _ => Task.FromResult(listed), id => Models.AiModels.Priced(_spending, provider, id), cancellationToken).ConfigureAwait(false)).Model
+                : _resolver.Current().FirstOrDefault(r => r.Provider == provider && r.Family == chosen.Id)?.Model ?? chosen.Fallback;
+        }
+        else if (provider == KnownProviders.Anthropic)
+        {
+            current = Models.ClaudeModel.DefaultModel;
+        }
+
+        var priced = provider is KnownProviders.OpenAi or KnownProviders.Google;
+        return new ModelsView(
+            current,
+            families,
+            [.. listed.Where(id => !priced || Models.AiModels.Priced(_spending, provider, id)).Order(StringComparer.Ordinal).Take(500)],
+            problem);
+    }
+
+    /// <summary>
+    /// The curated model families of each provider and the automatic choices made so far (no provider is asked).
+    /// </summary>
+    /// <returns>The families and choices.</returns>
+    [HttpGet("Families")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    public ActionResult<FamiliesView> Families()
+        => new FamiliesView(
+            Models.ModelCatalog.Families.GroupBy(f => f.Provider).ToDictionary(g => g.Key, g => (IReadOnlyList<FamilyView>)[.. g.Select(f => new FamilyView(f.Id, f.Label, f.IsDefault))], StringComparer.Ordinal),
+            _resolver.Current(),
+            Models.ClaudeModel.DefaultModel);
+
+    private Models.ModelServices Services() => new(_keys, _spending, _resolver, () => _http.CreateClient());
+
+    // What a test cost, in the settings' currency when it can be converted
+    private string CostText(Common.Costs.Money cost, PluginConfiguration config)
+    {
+        var limits = Pricing.AiSpending.LimitsOf(config);
+        var shown = Common.Costs.CostConverter.ToUserCurrency(cost, limits.Currency, _spending.Rates.Current, DateOnly.FromDateTime(DateTime.Now), limits.ExtraPercent) ?? cost;
+        return CallPresenter.Money(shown.Amount, shown.Currency);
+    }
+
+    // The test answer, short: the greeting if it gave one, else the JSON
+    private static string Reply(JsonElement json)
+    {
+        var text = json.ValueKind == JsonValueKind.Object && json.TryGetProperty("greeting", out var g) && g.ValueKind == JsonValueKind.String
+            ? "\u201C" + g.GetString() + "\u201D"
+            : json.GetRawText();
+        return text.Length > 120 ? text[..120] + "…" : text;
     }
 
     /// <summary>
@@ -253,8 +407,8 @@ public class AiController : ControllerBase
     private static readonly IReadOnlyDictionary<string, JsonElement> TestSchema = new Dictionary<string, JsonElement>
     {
         ["type"] = JsonSerializer.SerializeToElement("object"),
-        ["properties"] = JsonSerializer.SerializeToElement(new { ok = new { type = "boolean" } }),
-        ["required"] = JsonSerializer.SerializeToElement(new[] { "ok" }),
+        ["properties"] = JsonSerializer.SerializeToElement(new { ok = new { type = "boolean" }, greeting = new { type = "string" } }),
+        ["required"] = JsonSerializer.SerializeToElement(new[] { "ok", "greeting" }),
         ["additionalProperties"] = JsonSerializer.SerializeToElement(false),
     };
 
@@ -293,6 +447,9 @@ public sealed record TestRequest
 
     /// <summary>Gets the model (empty for the setting or the provider's default).</summary>
     public string? Model { get; init; }
+
+    /// <summary>Gets the provider's settings as shown on the page (not yet saved), if sent; otherwise the saved ones are used.</summary>
+    public ProviderSettings? Settings { get; init; }
 }
 
 /// <summary>
@@ -300,7 +457,49 @@ public sealed record TestRequest
 /// </summary>
 /// <param name="Ok">Whether it worked.</param>
 /// <param name="Message">What to show.</param>
-public sealed record TestResult(bool Ok, string Message);
+public sealed record TestResult(bool Ok, string Message)
+{
+    /// <summary>Gets the model that answered, when it worked.</summary>
+    public string? Model { get; init; }
+
+    /// <summary>Gets the model's reply, short, when it worked.</summary>
+    public string? Reply { get; init; }
+
+    /// <summary>Gets what the test cost (<c>AUD 0.0012</c>, or free), when it worked.</summary>
+    public string? Cost { get; init; }
+}
+
+/// <summary>
+/// How the providers have been doing.
+/// </summary>
+/// <param name="Problems">Switched-on providers with a systemic problem (shown as a banner).</param>
+/// <param name="Providers">Every provider's recent record.</param>
+public sealed record HealthView(IReadOnlyList<Health.AiProviderHealth> Problems, IReadOnlyList<Health.AiProviderHealth> Providers);
+
+/// <summary>
+/// A model family, for the settings page.
+/// </summary>
+/// <param name="Id">The family id.</param>
+/// <param name="Label">Its name for people.</param>
+/// <param name="IsDefault">Whether it is the recommended one.</param>
+public sealed record FamilyView(string Id, string Label, bool IsDefault);
+
+/// <summary>
+/// The curated model families and the automatic choices made so far.
+/// </summary>
+/// <param name="Families">Provider id → its families, the recommended one first.</param>
+/// <param name="Current">The automatic choices made since the server started (provider, family, model, when checked).</param>
+/// <param name="ClaudeDefault">Claude's recommended model (it has no automatic choice yet).</param>
+public sealed record FamiliesView(IReadOnlyDictionary<string, IReadOnlyList<FamilyView>> Families, IReadOnlyList<Models.ResolvedModel> Current, string ClaudeDefault);
+
+/// <summary>
+/// A provider's models, for the settings page.
+/// </summary>
+/// <param name="Current">The model the automatic choice uses now (for the family asked about), if known.</param>
+/// <param name="Families">The provider's model families (empty for providers without automatic choice).</param>
+/// <param name="Available">The models the provider offers (for OpenAI and Google, only those with a published price).</param>
+/// <param name="Problem">Why the list couldn't be read, if it couldn't.</param>
+public sealed record ModelsView(string? Current, IReadOnlyList<FamilyView> Families, IReadOnlyList<string> Available, string? Problem);
 
 /// <summary>
 /// This month's spending on AI providers.

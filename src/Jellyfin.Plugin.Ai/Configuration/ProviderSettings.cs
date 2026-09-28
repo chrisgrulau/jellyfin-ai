@@ -28,10 +28,35 @@ public class ProviderSettings
     public bool Enabled { get; set; }
 
     /// <summary>
-    /// Gets or sets the model. Empty means the current recommended model, resolved automatically (for Anthropic, the
-    /// Claude Opus 5.5 for Anthropic); naming a model pins it, and a pinned model may cost more and can be retired by the provider.
+    /// Gets or sets the model. Empty means the current model of the chosen <see cref="Family"/>, resolved automatically
+    /// (for Anthropic, Claude Opus 5.5); naming a model pins it, and a pinned model may cost more and can be retired by
+    /// the provider. An OpenAI-compatible service has no automatic choice: its model must be named.
     /// </summary>
     public string Model { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Gets or sets the model family the automatic choice picks the newest model from (OpenAI and Google; see
+    /// <see cref="Models.ModelCatalog"/>). Empty means the provider's recommended family.
+    /// </summary>
+    public string Family { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Gets or sets a value indicating whether an OpenAI-compatible service at a remote address doesn't charge (a free
+    /// service, or one paid for another way). Its calls are then not metered, like a local service's.
+    /// </summary>
+    public bool Free { get; set; }
+
+    /// <summary>
+    /// Gets or sets what an OpenAI-compatible service charges per million input tokens, in <see cref="PriceCurrency"/>
+    /// (0 when not set). Used to estimate and record its calls when the service doesn't say what a call cost.
+    /// </summary>
+    public decimal InputPrice { get; set; }
+
+    /// <summary>Gets or sets what an OpenAI-compatible service charges per million output tokens (0 when not set).</summary>
+    public decimal OutputPrice { get; set; }
+
+    /// <summary>Gets or sets the currency of <see cref="InputPrice"/> and <see cref="OutputPrice"/>.</summary>
+    public string PriceCurrency { get; set; } = "USD";
 
     /// <summary>Gets or sets the service address, for an OpenAI-compatible service (a local server, OpenRouter …).</summary>
     [System.Diagnostics.CodeAnalysis.SuppressMessage("Design", "CA1056:URI-like properties should not be strings", Justification = "Stored as entered in the XML plugin configuration; parsed and checked where it is used.")]

@@ -23,7 +23,8 @@ namespace Jellyfin.Plugin.Ai.Calls;
 /// <param name="Limits">The spending limits (for the display currency and extra percentage), if known.</param>
 /// <param name="Rates">The latest exchange rates, if any.</param>
 /// <param name="Secrets">The API keys in use, removed from any error message.</param>
-internal sealed record CallContext(string Caller, bool Keep, SpendLimits? Limits, ExchangeRates? Rates, IReadOnlyList<string?> Secrets);
+/// <param name="Health">Each provider's recent record, kept whether or not the log is, if any.</param>
+internal sealed record CallContext(string Caller, bool Keep, SpendLimits? Limits, ExchangeRates? Rates, IReadOnlyList<string?> Secrets, Health.ProviderHealthLog? Health = null);
 
 /// <summary>
 /// A log of AI call attempts, for the settings page: one JSON object per line in the plugin's data folder
@@ -116,11 +117,15 @@ public sealed class CallLog
         }
         catch (Exception ex)
         {
-            Record(Build(time, _clock.GetElapsedTime(start), request, model, null, ex, context), context.Keep);
+            var failed = Build(time, _clock.GetElapsedTime(start), request, model, null, ex, context);
+            context.Health?.Record(failed);
+            Record(failed, context.Keep);
             throw;
         }
 
-        Record(Build(time, _clock.GetElapsedTime(start), request, model, answer, null, context), context.Keep);
+        var answered = Build(time, _clock.GetElapsedTime(start), request, model, answer, null, context);
+        context.Health?.Record(answered);
+        Record(answered, context.Keep);
         return answer;
     }
 
@@ -334,6 +339,7 @@ public sealed class CallLog
             DisplayCost = display is { } d ? decimal.Round(d.Amount, 6) : null,
             DisplayCurrency = display?.Currency,
             DurationMs = (long)Math.Max(0, duration.TotalMilliseconds),
+            Unmetered = model is FreeModel ? true : null,
         };
 
         return (answer, error) switch

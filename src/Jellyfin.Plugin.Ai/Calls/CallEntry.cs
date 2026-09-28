@@ -61,6 +61,10 @@ public sealed record CallEntry
     /// <summary>Gets the settings' currency for <see cref="DisplayCost"/>.</summary>
     public string? DisplayCurrency { get; init; }
 
+    /// <summary>Gets a value indicating whether the call cost nothing and wasn't metered (a local or free service);
+    /// <c>null</c> for a metered call.</summary>
+    public bool? Unmetered { get; init; }
+
     /// <summary>Gets how long the call took, in milliseconds.</summary>
     public long DurationMs { get; init; }
 

@@ -43,6 +43,9 @@ public static class BudgetRules
         ArgumentNullException.ThrowIfNull(config);
 
         config.Currency = Common.Costs.CurrencyCode.NormaliseOr(config.Currency, "USD");
+        config.DefaultProvider = KnownProviders.IsKnown(config.DefaultProvider?.Trim()) ? config.DefaultProvider!.Trim() : KnownProviders.Anthropic;
+        var fallbacks = (config.FallbackProviders ?? []).Select(f => f?.Trim()).Where(f => KnownProviders.IsKnown(f) && f != config.DefaultProvider).Distinct(StringComparer.Ordinal).ToList();
+        config.FallbackProviders = new System.Collections.ObjectModel.Collection<string>(fallbacks!);
         config.OverallMonthlyBudget = Math.Max(0, config.OverallMonthlyBudget);
         config.ExtraChargesPercent = Math.Clamp(config.ExtraChargesPercent, 0m, Common.Costs.CostConverter.MaxExtraPercent);
 
@@ -58,6 +61,11 @@ public static class BudgetRules
             var p = byId.TryGetValue(id, out var existing) ? existing : KnownProviders.Default(id);
             p.Model = (p.Model ?? string.Empty).Trim();
             p.BaseUrl = (p.BaseUrl ?? string.Empty).Trim();
+            p.Family = Models.ModelCatalog.Family(p.Id, p.Family) is { } family && !family.IsDefault ? family.Id : string.Empty;
+            p.InputPrice = Math.Max(0, p.InputPrice);
+            p.OutputPrice = Math.Max(0, p.OutputPrice);
+            p.PriceCurrency = Common.Costs.CurrencyCode.NormaliseOr(p.PriceCurrency, "USD");
+            p.Free = p.Free && string.Equals(p.Id, KnownProviders.OpenAiCompatible, StringComparison.Ordinal);
             p.PrepaidCredit = Math.Max(0, p.PrepaidCredit);
             p.PrepaidCreditCurrency = Common.Costs.CurrencyCode.NormaliseOr(p.PrepaidCreditCurrency, "USD");
             p.PrepaidCreditDate = DateOnly.TryParseExact((p.PrepaidCreditDate ?? string.Empty).Trim(), "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out var d)
@@ -106,7 +114,8 @@ public static class BudgetRules
 
         var messages = new List<BudgetMessage>();
         decimal? overall = config.NoOverallLimit ? null : Math.Max(0, config.OverallMonthlyBudget);
-        var paid = config.Providers.Where(p => p is { Enabled: true } && available(p.Id) && !IsLocal(p)).ToList();
+        var on = config.Providers.Where(p => p is { Enabled: true } && available(p.Id)).ToList();
+        var paid = on.Where(p => !ProviderRules.IsUnmetered(p)).ToList();
         string Money(decimal amount) => config.Currency + " " + amount.ToString("0.00", CultureInfo.InvariantCulture);
 
         // Speech-to-text providers are used by Subtitles, which this plugin can't see from here: their own limits count, but
@@ -138,21 +147,35 @@ public static class BudgetRules
             }
         }
 
+        // An OpenAI-compatible service needs a usable address and a model; a paid one needs its prices to be metered
+        foreach (var p in on.Where(p => p.Id == KnownProviders.OpenAiCompatible))
+        {
+            if (ProviderRules.AddressProblem(p.BaseUrl, out _) is { } address)
+            {
+                messages.Add(new BudgetMessage(BudgetSeverity.Error, Name(p) + ": " + address));
+            }
+
+            if (string.IsNullOrWhiteSpace(p.Model))
+            {
+                messages.Add(new BudgetMessage(BudgetSeverity.Warning, Name(p) + ": name the model to use (the service has no automatic choice)."));
+            }
+
+            if (!ProviderRules.IsUnmetered(p) && ProviderRules.CustomPrice(p) is null)
+            {
+                messages.Add(new BudgetMessage(BudgetSeverity.Warning, Name(p) + ": its prices aren't known, so it isn't used. Enter them under Advanced, or tick \"This service is free\"."));
+            }
+        }
+
+        // Which provider answers
+        if (on.Count > 0 && !on.Any(p => p.Id == config.DefaultProvider))
+        {
+            var order = ProviderRules.Order(config);
+            var first = order.Count > 0 ? order[0] : null;
+            messages.Add(new BudgetMessage(BudgetSeverity.Warning, $"{KnownProviders.NameOf(config.DefaultProvider)} is chosen to answer but is switched off{(first is null ? "." : $"; {KnownProviders.NameOf(first)} answers instead.")}"));
+        }
+
         return messages;
     }
 
-    // Local servers (an OpenAI-compatible address on this machine or network) cost nothing. A local relay to a paid service
-    // (LiteLLM, an OpenRouter proxy) is also treated as free; the settings page says so
-    private static bool IsLocal(ProviderSettings p)
-        => string.Equals(p.Id, KnownProviders.OpenAiCompatible, StringComparison.Ordinal) && Common.NetworkAddress.IsLocal(p.BaseUrl);
-
-    private static string Name(ProviderSettings p) => p.Id switch
-    {
-        KnownProviders.Anthropic => "Anthropic",
-        KnownProviders.OpenAi => "OpenAI",
-        KnownProviders.Google => "Google",
-        KnownProviders.Deepgram => "Deepgram speech-to-text",
-        KnownProviders.OpenAiSpeech => "OpenAI speech-to-text",
-        _ => "OpenAI-compatible service",
-    };
+    private static string Name(ProviderSettings p) => KnownProviders.NameOf(p.Id);
 }
