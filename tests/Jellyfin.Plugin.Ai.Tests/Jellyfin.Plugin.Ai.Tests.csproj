@@ -10,7 +10,7 @@
     <!-- xunit v3 runs on Microsoft.Testing.Platform (selected in global.json); no VSTest adapter needed -->
     <PackageReference Include="xunit.v3" Version="4.0.1" />
     <!-- The settings types derive from Jellyfin's; tests load Jellyfin.Model for real (the plugin excludes it at runtime) -->
-    <PackageReference Include="Jellyfin.Model" Version="12.1.0" />
+    <PackageReference Include="Jellyfin.Model" Version="12.2.0" />
   </ItemGroup>
 
   <ItemGroup>
